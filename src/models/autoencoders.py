@@ -1,0 +1,485 @@
+#!/usr/bin/env python3
+
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+from torch.optim.lr_scheduler import ReduceLROnPlateau
+
+import lightning.pytorch as pl
+
+from einops.layers.torch import Rearrange
+
+from config import default_config as config
+
+
+class Autoencoder(pl.LightningModule):
+    def __init__(
+            self,
+            num_classes=config['NUM_CLASSES'],
+            reconstruction_loss_weight=config['RECONSTRUCTION_LOSS_WEIGHT'],
+            classification_loss_weight=config['CLASSIFICATION_LOSS_WEIGHT'],
+            bottleneck_dim=config['BOTTLENECK_DIM'],
+            learning_rate=config['LEARNING_RATE'],
+            sequence_length=config['WINDOW_SIZE'],
+            learning_rate_patience=config['LEARNING_RATE_PATIENCE'],
+            dropout=config['DROPOUT'],
+            monitor=config['MONITOR_METRIC'],
+    ):
+        super().__init__()
+
+        self.learning_rate = learning_rate
+        self.learning_rate_patience = learning_rate_patience
+        self.dropout = dropout
+        self.monitor = monitor
+        self.bottleneck_dim = bottleneck_dim
+        self.batch_size = config['BATCH_SIZE']
+
+        self.num_classes = num_classes
+        self.reconstruction_loss_weight = reconstruction_loss_weight
+        self.classification_loss_weight = classification_loss_weight
+
+
+        # conv1d expects (batch, channels, seq_len)
+        self.example_input_array = torch.rand(self.batch_size, sequence_length)
+
+
+        # hidden_dims = [512, 256 ]
+
+        # Encoder
+        activation_fn = nn.LeakyReLU()
+
+
+        # self.encoder = LSTMEncoder(input_size=1, hidden_size=bottleneck_dim, num_layers=2)
+        # self.decoder = LSTMDecoder(input_size=1, hidden_size=bottleneck_dim, num_layers=2, sequence_length=sequence_length)
+
+
+        self.encoder = CNNLSTMEncoder(sequence_length=sequence_length, num_features=1, hidden_size=bottleneck_dim)
+        self.decoder = CNNLSTMDecoder(sequence_length=sequence_length, hidden_size=bottleneck_dim)
+
+        # Classifier Head
+        self.classifier = nn.Linear(bottleneck_dim, num_classes)
+
+        # Loss Functions
+        self.reconstruction_loss_fn = nn.MSELoss()
+        self.classification_loss_fn = nn.CrossEntropyLoss()
+
+    def forward(self, x):
+        # import pdb; pdb.set_trace()
+        encoded = self.encoder(x)
+        decoded = self.decoder(encoded)
+
+        # Classify based on the encoded representation
+        classification = self.classifier(encoded)
+        return decoded, classification
+
+    def training_step(self, batch, batch_idx):
+        x, y = batch
+        x_hat, y_hat = self.forward(x)
+
+        # Compute losses
+        reconstruction_loss = self.reconstruction_loss_fn(x_hat, x) * self.reconstruction_loss_weight
+        classification_loss = self.classification_loss_fn(y_hat, y) * self.classification_loss_weight
+        total_loss = reconstruction_loss + classification_loss
+
+        self.log('train_loss', total_loss, sync_dist=True, prog_bar=True)
+        self.log('train_recon_loss', reconstruction_loss, sync_dist=True)
+        self.log('train_class_loss', classification_loss, sync_dist=True)
+        return total_loss
+
+
+    def validation_step(self, batch, batch_idx):
+        x, y = batch
+        x_hat, y_hat = self.forward(x)
+        reconstruction_loss = self.reconstruction_loss_fn(x_hat, x) * self.reconstruction_loss_weight
+        classification_loss = self.classification_loss_fn(y_hat, y) * self.classification_loss_weight
+        total_loss = reconstruction_loss + classification_loss
+
+        self.log('val_loss', total_loss, sync_dist=True, prog_bar=True)
+
+    # def predict_step(self, batch, batch_idx, dataloader_idx=None):
+    #     # use the encoder to extract features
+    #     x, y = batch
+    #     x_hat = self.encoder(x)
+    #     return x_hat, y
+
+
+    def configure_optimizers(self):
+        optimizer = torch.optim.Adam(self.parameters(), lr=self.learning_rate)
+        monitor = self.monitor
+        scheduler = {
+            'scheduler': ReduceLROnPlateau(optimizer, patience=self.learning_rate_patience, verbose=False),
+            'interval': 'epoch',  # or 'step'
+            'frequency': 1,
+            'monitor': monitor,  # Name of the metric to monitor
+        }
+        return [optimizer], [scheduler]
+
+
+class LinearEncoder(nn.Module):
+    def __init__(self, bottleneck_dim, activation_fn=nn.ReLU(True), input_dim=1000, hidden_dims=[512, 256, 128]):
+        super().__init__()
+        self.bottleneck_dim = bottleneck_dim
+
+        layers = [input_dim] + hidden_dims + [bottleneck_dim]
+
+       # Create the encoder layers
+        encoder_layers = []
+        for i in range(len(layers) - 1):
+            encoder_layers.append(nn.Linear(layers[i], layers[i+1]))
+            encoder_layers.append(activation_fn)
+
+        self.net = nn.Sequential(*encoder_layers)
+
+    def forward(self, x):
+        x = self.net(x)
+
+
+class LinearDecoder(nn.Module):
+    def __init__(self, bottleneck_dim, activation_fn=nn.ReLU(True), input_dim=1000, hidden_dims=[512, 256, 128]):
+        super().__init__()
+        self.bottleneck_dim = bottleneck_dim
+
+        layers = [input_dim] + hidden_dims + [bottleneck_dim]
+
+        decoder_layers = []
+
+        # reverse the layer dims
+
+        for i in range(len(layers) - 1, 0, -1):
+            decoder_layers.append(nn.Linear(layers[i], layers[i-1]))
+            # Use ReLU for all layers except for the last one
+            if i > 1:
+                decoder_layers.append(activation_fn)
+                # else:
+                # Typically the last layer would have a sigmoid if we expect the output to be [0,1]
+                # decoder_layers.append(nn.Sigmoid())
+                # decoder_layers.append(nn.Tanh())
+
+        self.net = nn.Sequential(*decoder_layers)
+
+
+    def forward(self, x):
+        x = self.net(x)
+
+
+class ConvEncoder(nn.Module):
+    def __init__(self, channels, bottleneck_dim, activation_fn=nn.ReLU(True)):
+        super().__init__()
+        self.channels = channels
+        self.bottleneck_dim = bottleneck_dim
+        self.dropout = config['DROPOUT']
+
+        self.batch_size = config['BATCH_SIZE']
+
+        # Convolutional layers
+        conv_layers = []
+        for i in range(len(channels) - 1):
+            conv_layers.append(nn.Conv1d(channels[i], channels[i + 1], kernel_size=3, stride=2, padding=1))
+            conv_layers.append(nn.BatchNorm1d(channels[i + 1]))
+            conv_layers.append(activation_fn)
+            if i % 2 == 0:
+                conv_layers.append(nn.Dropout(self.dropout))
+                self.conv_layers = nn.Sequential(*conv_layers)
+
+        # Calculate the flattened feature dimension
+        self.feature_dim = self._get_conv_output_dim()
+
+        # Bottleneck linear layer
+        self.bottleneck = nn.Sequential(
+            nn.Linear(self.feature_dim, bottleneck_dim),
+            activation_fn,
+            nn.Dropout(self.dropout),
+        )
+
+    def _get_conv_output_dim(self):
+        # Empirically determine the output dimension of conv layers for the linear layer
+        with torch.no_grad():
+            dummy_input = torch.zeros(self.batch_size, self.channels[0], 1000, device=self.conv_layers[0].weight.device)
+            dummy_output = self.conv_layers(dummy_input)
+            return int(torch.numel(dummy_output) / dummy_output.shape[0])
+
+    def forward(self, x):
+        x = x.unsqueeze(1)  # Add channel dimension
+        x = self.conv_layers(x)
+        # x = nn.Flatten(1)(x)  # Flatten
+        x = x.view(x.size(0), -1)  # Flatten
+        x = self.bottleneck(x)  # Linear bottleneck
+
+
+class ConvDecoder(nn.Module):
+    def __init__(self, channels, bottleneck_dim, activation_fn=nn.ReLU(True)):
+        super().__init__()
+        self.channels = channels
+        self.bottleneck_dim = bottleneck_dim
+
+        self.batch_size = config['BATCH_SIZE']
+        self.dropout = config['DROPOUT']
+
+        # Convolutional layers
+        conv_layers = []
+        for i in range(len(channels) - 1, 0, -1):
+            conv_layers.append(nn.ConvTranspose1d(channels[i], channels[i - 1], kernel_size=3, stride=2, padding=1, output_padding=1))
+            conv_layers.append(nn.BatchNorm1d(channels[i - 1]))
+            conv_layers.append(activation_fn)
+            if i % 2 == 0:
+                conv_layers.append(nn.Dropout(self.dropout))
+                conv_layers.pop()  # remove the last ReLU for the output layer
+
+        self.conv_layers = nn.Sequential(*conv_layers)
+
+        # The first layer of the decoder is a linear layer
+        self.bottleneck = nn.Sequential(
+            nn.Linear(bottleneck_dim, channels[-1] * self._get_conv_output_dim()),
+            activation_fn,
+            nn.Dropout(self.dropout),
+        )
+
+
+    def _get_conv_output_dim(self):
+        # Empirically determine the output dimension of conv layers for the linear layer
+        with torch.no_grad():
+            dummy_input = torch.zeros(self.batch_size, self.channels[-1], 1000, device=self.conv_layers[0].weight.device)
+            dummy_output = self.conv_layers(dummy_input)
+            return int(torch.numel(dummy_output) / dummy_output.shape[0] / self.channels[-1])
+
+    def forward(self, x):
+        # set breakpoint
+        # import pdb
+
+        # pdb.set_trace()
+        x = self.bottleneck(x)  # Linear bottleneck
+        # x = nn.Unflatten(1, (self.channels[-1], self._get_conv_output_dim()))(x)  # Unflatten
+        x = x.view(x.size(0), self.channels[-1], -1)  # Unflatten
+        # x = x.view(x.size(0), self.channels[-1], self._get_conv_output_dim())
+        x = self.conv_layers(x)  # Convolutional layers
+        x = x.squeeze(1)  # Remove channel dimension
+
+
+
+class LSTMEncoder(nn.Module):
+    def __init__(self, input_size=1, hidden_size=config['BOTTLENECK_DIM'], num_layers=1):
+        super().__init__()
+        self.sequence_length = config['WINDOW_SIZE']
+        self.hidden_size = hidden_size
+        self.lstm = nn.LSTM(input_size=input_size, hidden_size=hidden_size, num_layers=num_layers, batch_first=True)
+
+    def forward(self, x):
+        x = x.reshape(-1, self.sequence_length, 1)
+        _, (hidden, _) = self.lstm(x)
+        features = hidden[-1, :, :]
+        return features
+
+
+class LSTMDecoder(nn.Module):
+    def __init__(self, input_size=1, hidden_size=config['BOTTLENECK_DIM'], num_layers=1, sequence_length=config['WINDOW_SIZE']):
+        super().__init__()
+        self.sequence_length = sequence_length
+        self.hidden_size = hidden_size
+        self.num_layers = num_layers
+        self.input_size = input_size
+        self.lstm = nn.LSTM(input_size=hidden_size, hidden_size=hidden_size, num_layers=num_layers, batch_first=True)
+
+        self.linear = nn.Linear(hidden_size, input_size)
+
+
+    # def forward(self, hidden):
+    #     # Initialize a sequence of zeros with shape: (batch_size, sequence_length, hidden_size)
+    #     batch_size = hidden.size(1)
+    #     # Create initial input for LSTM
+    #     # We expect hidden to be of shape (num_layers, batch_size, hidden_size)
+    #     # We need to create a (batch_size, sequence_length, hidden_size) tensor
+    #     decoder_input = torch.zeros(batch_size, self.sequence_length, self.hidden_size, device=hidden.device)
+    #     lstm_out, _ = self.lstm(decoder_input, (hidden, torch.zeros_like(hidden)))
+    #     # Pass each time step through the linear layer to get the final output
+    #     # Flatten the output for the linear layer
+    #     lstm_out = lstm_out.contiguous().view(batch_size * self.sequence_length, self.hidden_size)
+    #     decoded = self.linear(lstm_out)
+    #     # Reshape to get the desired output shape (batch_size, sequence_length)
+    #     decoded = decoded.view(batch_size, self.sequence_length)
+    #     return decoded
+
+    def forward(self, hidden):
+        # `hidden` is the feature vector from the encoder and has a shape of: (batch_size, hidden_size)
+        # We need to add a dimension to match the LSTM's expected input shape, which is:
+        # (batch_size, sequence_length, input_size)
+        # We initialize the sequence to zeros
+        batch_size = hidden.size(0)
+        decoder_input = torch.zeros(batch_size, self.sequence_length, self.hidden_size, device=hidden.device)
+
+        # We now need to initialize the hidden and cell state for the LSTM
+        # Since we are only taking the last layer's hidden state from the encoder, we need to
+        # repeat it `num_layers` times for the initial hidden state
+        h_0 = hidden.unsqueeze(0).repeat(self.num_layers, 1, 1)
+        c_0 = torch.zeros(self.num_layers, batch_size, self.hidden_size, device=hidden.device)
+
+        # Now we can pass the input and the initial states to the LSTM
+        lstm_out, _ = self.lstm(decoder_input, (h_0, c_0))
+
+        # Pass the output of the LSTM to the linear layer to get our decoded output
+        lstm_out = lstm_out.contiguous().view(batch_size * self.sequence_length, self.hidden_size)
+        decoded = self.linear(lstm_out)
+
+        # Finally, we reshape it to get our final output shape (batch_size, sequence_length)
+        decoded = decoded.view(batch_size, self.sequence_length)
+
+        return decoded
+
+
+class Attention(nn.Module):
+    def __init__(self, hidden_size):
+        super().__init__()
+        self.hidden_size = hidden_size
+        self.attention = nn.Linear(hidden_size, 1)
+
+    def forward(self, lstm_output):
+        # lstm_output shape: (batch_size, seq_length, hidden_size)
+        attention_weights = torch.softmax(self.attention(lstm_output), dim=1)
+        # attention_weights shape: (batch_size, seq_length, 1)
+
+        # Apply attention weights
+        attended = attention_weights * lstm_output
+        # attended shape: (batch_size, seq_length, hidden_size)
+
+        # Sum over the sequence dimension
+        output = torch.sum(attended, dim=1)
+        # output shape: (batch_size, hidden_size)
+        return output, attention_weights
+
+
+class CNNLSTMEncoder(nn.Module):
+    def __init__(self, sequence_length, num_features, hidden_size, num_layers=2, dropout=config['DROPOUT']):
+        super(CNNLSTMEncoder, self).__init__()
+        self.sequence_length = sequence_length
+        self.hidden_size = hidden_size
+        self.num_layers = num_layers
+        self.dropout = dropout
+
+        # Define CNN layers
+        self.conv1 = nn.Conv1d(in_channels=num_features, out_channels=64, kernel_size=3, stride=1, padding=1)
+        # self.bn1 = nn.BatchNorm1d(64)
+        self.conv2 = nn.Conv1d(in_channels=64, out_channels=128, kernel_size=3, stride=1, padding=1)
+        # self.bn2 = nn.BatchNorm1d(128)
+        self.pool = nn.MaxPool1d(kernel_size=2, stride=2)
+
+        # Calculate the size of the features after the CNN layers
+        cnn_output_size = sequence_length // 2 // 2
+
+        # Define LSTM layers
+        self.lstm = nn.LSTM(input_size=128, hidden_size=hidden_size, num_layers=num_layers, batch_first=True)
+
+        # Linear layer to get to the desired hidden_size
+        self.fc = nn.Linear(cnn_output_size * hidden_size, hidden_size)
+        # self.fc = nn.Linear(hidden_size, hidden_size)
+
+        # add dropout
+        self.dropout = nn.Dropout(dropout)
+
+        # Attention layer
+        # self.attention = Attention(hidden_size)
+
+
+    def forward(self, x):
+        # import pdb; pdb.set_trace()
+        # Apply CNN layers
+        x = x.unsqueeze(1)  # Add a channel dimension
+
+        # x = torch.relu(self.bn1(self.conv1(x)))
+        x = self.conv1(x)
+        # x = self.bn1(x)
+        x = torch.relu(x)
+        x = self.pool(x)
+
+        # x = torch.relu(self.bn2(self.conv2(x)))
+        x = self.conv2(x)
+        # x = self.bn2(x)
+        x = torch.relu(x)
+
+        x = self.pool(x)
+
+        x = self.dropout(x)
+
+        # Reshape for LSTM
+        x = x.transpose(1, 2)  # Swap channel and sequence_length dimensions
+        x, _ = self.lstm(x)
+
+        # Apply attention
+        # x, attention_weights = self.attention(x)
+
+        # Reshape and apply linear layer
+        x = x.contiguous().view(x.size(0), -1)
+        x = self.fc(x)
+        return x
+
+
+
+class CNNLSTMDecoder(nn.Module):
+    def __init__(self, sequence_length, hidden_size, num_layers=2, dropout=config['DROPOUT']):
+        super(CNNLSTMDecoder, self).__init__()
+        self.sequence_length = sequence_length
+        self.hidden_size = hidden_size
+        self.num_layers = num_layers
+        self.dropout = dropout
+
+        # Define LSTM layers
+        self.lstm = nn.LSTM(input_size=hidden_size, hidden_size=hidden_size, num_layers=num_layers, batch_first=True)
+
+        # Define upsampling and CNN layers
+        self.upsample1 = nn.Upsample(size=sequence_length // 2)
+        self.conv1 = nn.Conv1d(in_channels=hidden_size, out_channels=128, kernel_size=3, stride=1, padding=1)
+        # self.bn1 = nn.BatchNorm1d(128)
+
+        self.upsample2 = nn.Upsample(size=sequence_length)
+        self.conv2 = nn.Conv1d(in_channels=128, out_channels=64, kernel_size=3, stride=1, padding=1)
+
+        # self.bn2 = nn.BatchNorm1d(64)
+        self.conv3 = nn.Conv1d(in_channels=64, out_channels=1, kernel_size=3, stride=1, padding=1)
+
+        # Linear layer to reshape the input to the LSTM
+        self.fc = nn.Linear(hidden_size, hidden_size * (sequence_length // 4))
+
+        # add dropout
+        self.dropout = nn.Dropout(dropout)
+
+        # Attention layer
+        # self.attention = Attention(hidden_size)
+
+    def forward(self, x):
+        # import pdb; pdb.set_trace()
+        # Apply linear layer and reshape for LSTM
+        x = self.fc(x)
+        x = x.view(x.size(0), self.sequence_length // 4, self.hidden_size)
+
+        # Apply LSTM layers
+        x, _ = self.lstm(x)
+
+        # Apply attention using encoder attention weights
+        # x, _ = self.attention(x * encoder_attention_weights)
+
+        # x = x.unsqueeze(1)  # Add channel dimension
+
+        x = x.transpose(1, 2)  # Swap sequence_length and channel dimensions
+
+        
+        # Apply upsampling and CNN layers
+        x = self.upsample1(x)
+        # x = torch.relu(self.bn1(self.conv1(x)))
+        x = self.conv1(x)
+        # x = self.bn1(x)
+        x = torch.relu(x)
+
+        x = self.upsample2(x)
+        # x = torch.relu(self.bn2(self.conv2(x)))
+        x = self.conv2(x)
+        # x = self.bn2(x)
+        x = torch.relu(x)
+
+
+        x = self.dropout(x)
+        
+        # x = torch.sigmoid(self.conv3(x))
+        x = self.conv3(x)
+
+        # Remove the channel dimension
+        x = x.squeeze(1)
+        return x
