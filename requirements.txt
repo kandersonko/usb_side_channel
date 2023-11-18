@@ -18,13 +18,14 @@ backcall @ file:///home/conda/feedstock_root/build_artifacts/backcall_1592338393
 backoff==2.2.1
 backports.functools-lru-cache @ file:///home/conda/feedstock_root/build_artifacts/backports.functools_lru_cache_1687772187254/work
 beautifulsoup4 @ file:///home/conda/feedstock_root/build_artifacts/beautifulsoup4_1680888073205/work
+bitsandbytes==0.41.2.post2
 bleach @ file:///home/conda/feedstock_root/build_artifacts/bleach_1674535352125/work
 blessed==1.20.0
 bokeh @ file:///croot/bokeh_1690546085683/work
 Bottleneck @ file:///opt/conda/conda-bld/bottleneck_1657175564434/work
 Brotli @ file:///tmp/abs_ecyw11_7ze/croots/recipe/brotli-split_1659616059936/work
 cachetools==5.3.1
-certifi @ file:///croot/certifi_1690232220950/work/certifi
+certifi==2023.7.22
 cffi @ file:///home/conda/feedstock_root/build_artifacts/cffi_1636046050867/work
 charset-normalizer @ file:///home/conda/feedstock_root/build_artifacts/charset-normalizer_1688813409104/work
 click @ file:///tmp/build/80754af9/click_1646056706450/work
@@ -102,7 +103,7 @@ jupyterlab_vim==4.0.3
 keras==2.13.1
 kiwisolver==1.4.5
 libclang==16.0.6
-lightning==2.1.0
+lightning==2.1.2
 lightning-cloud==0.5.38
 lightning-utilities==0.9.0
 lit==15.0.7
@@ -240,7 +241,7 @@ tzdata @ file:///croot/python-tzdata_1690578112552/work
 uri-template==1.3.0
 urllib3==1.26.16
 uvicorn==0.23.2
-wandb==0.15.12
+wandb==0.16.0
 wcwidth @ file:///home/conda/feedstock_root/build_artifacts/wcwidth_1673864653149/work
 webcolors==1.13
 webencodings @ file:///home/conda/feedstock_root/build_artifacts/webencodings_1694681268211/work

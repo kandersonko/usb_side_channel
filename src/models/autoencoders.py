@@ -4,6 +4,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from torchmetrics import Accuracy
+
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 import lightning.pytorch as pl
@@ -43,6 +45,10 @@ class Autoencoder(pl.LightningModule):
         # conv1d expects (batch, channels, seq_len)
         self.example_input_array = torch.rand(self.batch_size, sequence_length)
 
+        # Initialize accuracy metrics for multiclass classification
+        self.train_accuracy = Accuracy(num_classes=self.num_classes, task="multiclass")
+        self.val_accuracy = Accuracy(num_classes=self.num_classes, task="multiclass")
+
 
         # hidden_dims = [512, 256 ]
 
@@ -53,9 +59,26 @@ class Autoencoder(pl.LightningModule):
         # self.encoder = LSTMEncoder(input_size=1, hidden_size=bottleneck_dim, num_layers=2)
         # self.decoder = LSTMDecoder(input_size=1, hidden_size=bottleneck_dim, num_layers=2, sequence_length=sequence_length)
 
+        conv1_out_channels = config['CONV1_OUT_CHANNELS']
+        conv2_out_channels = config['CONV2_OUT_CHANNELS']
+        num_lstm_layers = config['NUM_LSTM_LAYERS']
 
-        self.encoder = CNNLSTMEncoder(sequence_length=sequence_length, num_features=1, hidden_size=bottleneck_dim)
-        self.decoder = CNNLSTMDecoder(sequence_length=sequence_length, hidden_size=bottleneck_dim)
+        self.encoder = CNNLSTMEncoder(
+            sequence_length=sequence_length,
+            num_features=1,
+            hidden_size=bottleneck_dim,
+            conv1_out_channels=conv1_out_channels,
+            conv2_out_channels=conv2_out_channels,
+            num_layers=num_lstm_layers,
+        )
+
+        self.decoder = CNNLSTMDecoder(
+            sequence_length=sequence_length,
+            hidden_size=bottleneck_dim,
+            num_layers=num_lstm_layers,
+            conv1_out_channels=conv2_out_channels, # we reverse the channels
+            conv2_out_channels=conv1_out_channels,
+        )
 
         # Classifier Head
         self.classifier = nn.Linear(bottleneck_dim, num_classes)
@@ -82,7 +105,11 @@ class Autoencoder(pl.LightningModule):
         classification_loss = self.classification_loss_fn(y_hat, y) * self.classification_loss_weight
         total_loss = reconstruction_loss + classification_loss
 
+        # Update accuracy metric
+        self.train_accuracy(y_hat, y)
+
         self.log('train_loss', total_loss, sync_dist=True, prog_bar=True)
+        self.log('train_accuracy', self.train_accuracy, sync_dist=True, prog_bar=True)
         self.log('train_recon_loss', reconstruction_loss, sync_dist=True)
         self.log('train_class_loss', classification_loss, sync_dist=True)
         return total_loss
@@ -93,16 +120,15 @@ class Autoencoder(pl.LightningModule):
         x_hat, y_hat = self.forward(x)
         reconstruction_loss = self.reconstruction_loss_fn(x_hat, x) * self.reconstruction_loss_weight
         classification_loss = self.classification_loss_fn(y_hat, y) * self.classification_loss_weight
+
         total_loss = reconstruction_loss + classification_loss
+
+        # Update accuracy metric
+        self.val_accuracy(y_hat, y)
 
         self.log('val_loss', total_loss, sync_dist=True, prog_bar=True)
 
-    # def predict_step(self, batch, batch_idx, dataloader_idx=None):
-    #     # use the encoder to extract features
-    #     x, y = batch
-    #     x_hat = self.encoder(x)
-    #     return x_hat, y
-
+        self.log('val_accuracy', self.val_accuracy, sync_dist=True, prog_bar=True)
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=self.learning_rate)
@@ -132,7 +158,8 @@ class LinearEncoder(nn.Module):
         self.net = nn.Sequential(*encoder_layers)
 
     def forward(self, x):
-        x = self.net(x)
+        return self.net(x)
+
 
 
 class LinearDecoder(nn.Module):
@@ -160,7 +187,8 @@ class LinearDecoder(nn.Module):
 
 
     def forward(self, x):
-        x = self.net(x)
+        return self.net(x)
+
 
 
 class ConvEncoder(nn.Module):
@@ -204,7 +232,7 @@ class ConvEncoder(nn.Module):
         x = self.conv_layers(x)
         # x = nn.Flatten(1)(x)  # Flatten
         x = x.view(x.size(0), -1)  # Flatten
-        x = self.bottleneck(x)  # Linear bottleneck
+        # Linear bottleneck
 
 
 class ConvDecoder(nn.Module):
@@ -253,7 +281,7 @@ class ConvDecoder(nn.Module):
         x = x.view(x.size(0), self.channels[-1], -1)  # Unflatten
         # x = x.view(x.size(0), self.channels[-1], self._get_conv_output_dim())
         x = self.conv_layers(x)  # Convolutional layers
-        x = x.squeeze(1)  # Remove channel dimension
+        # Remove channel dimension
 
 
 
@@ -268,7 +296,7 @@ class LSTMEncoder(nn.Module):
         x = x.reshape(-1, self.sequence_length, 1)
         _, (hidden, _) = self.lstm(x)
         features = hidden[-1, :, :]
-        return features
+
 
 
 class LSTMDecoder(nn.Module):
@@ -323,7 +351,7 @@ class LSTMDecoder(nn.Module):
         # Finally, we reshape it to get our final output shape (batch_size, sequence_length)
         decoded = decoded.view(batch_size, self.sequence_length)
 
-        return decoded
+
 
 
 class Attention(nn.Module):
@@ -344,11 +372,17 @@ class Attention(nn.Module):
         # Sum over the sequence dimension
         output = torch.sum(attended, dim=1)
         # output shape: (batch_size, hidden_size)
-        return output, attention_weights
+
 
 
 class CNNLSTMEncoder(nn.Module):
-    def __init__(self, sequence_length, num_features, hidden_size, num_layers=2, dropout=config['DROPOUT']):
+    def __init__(self, sequence_length,
+                 num_features,
+                 hidden_size=config['BOTTLENECK_DIM'],
+                 conv1_out_channels=config['CONV1_OUT_CHANNELS'],
+                 num_layers=config['NUM_LSTM_LAYERS'],
+                 conv2_out_channels=config['CONV2_OUT_CHANNELS'],
+                 dropout=config['DROPOUT']):
         super(CNNLSTMEncoder, self).__init__()
         self.sequence_length = sequence_length
         self.hidden_size = hidden_size
@@ -356,9 +390,9 @@ class CNNLSTMEncoder(nn.Module):
         self.dropout = dropout
 
         # Define CNN layers
-        self.conv1 = nn.Conv1d(in_channels=num_features, out_channels=64, kernel_size=3, stride=1, padding=1)
+        self.conv1 = nn.Conv1d(in_channels=num_features, out_channels=conv1_out_channels, kernel_size=3, stride=1, padding=1)
         # self.bn1 = nn.BatchNorm1d(64)
-        self.conv2 = nn.Conv1d(in_channels=64, out_channels=128, kernel_size=3, stride=1, padding=1)
+        self.conv2 = nn.Conv1d(in_channels=conv1_out_channels, out_channels=conv2_out_channels, kernel_size=3, stride=1, padding=1)
         # self.bn2 = nn.BatchNorm1d(128)
         self.pool = nn.MaxPool1d(kernel_size=2, stride=2)
 
@@ -366,7 +400,7 @@ class CNNLSTMEncoder(nn.Module):
         cnn_output_size = sequence_length // 2 // 2
 
         # Define LSTM layers
-        self.lstm = nn.LSTM(input_size=128, hidden_size=hidden_size, num_layers=num_layers, batch_first=True)
+        self.lstm = nn.LSTM(input_size=conv2_out_channels, hidden_size=hidden_size, num_layers=num_layers, batch_first=True)
 
         # Linear layer to get to the desired hidden_size
         self.fc = nn.Linear(cnn_output_size * hidden_size, hidden_size)
@@ -414,7 +448,12 @@ class CNNLSTMEncoder(nn.Module):
 
 
 class CNNLSTMDecoder(nn.Module):
-    def __init__(self, sequence_length, hidden_size, num_layers=2, dropout=config['DROPOUT']):
+    def __init__(self, sequence_length,
+                 hidden_size=config['BOTTLENECK_DIM'],
+                 num_layers=config['NUM_LSTM_LAYERS'],
+                 conv1_out_channels=config['CONV2_OUT_CHANNELS'], # we reverse the channels
+                 conv2_out_channels=config['CONV1_OUT_CHANNELS'],
+                 dropout=config['DROPOUT']):
         super(CNNLSTMDecoder, self).__init__()
         self.sequence_length = sequence_length
         self.hidden_size = hidden_size
@@ -426,14 +465,14 @@ class CNNLSTMDecoder(nn.Module):
 
         # Define upsampling and CNN layers
         self.upsample1 = nn.Upsample(size=sequence_length // 2)
-        self.conv1 = nn.Conv1d(in_channels=hidden_size, out_channels=128, kernel_size=3, stride=1, padding=1)
+        self.conv1 = nn.Conv1d(in_channels=hidden_size, out_channels=conv1_out_channels, kernel_size=3, stride=1, padding=1)
         # self.bn1 = nn.BatchNorm1d(128)
 
         self.upsample2 = nn.Upsample(size=sequence_length)
-        self.conv2 = nn.Conv1d(in_channels=128, out_channels=64, kernel_size=3, stride=1, padding=1)
+        self.conv2 = nn.Conv1d(in_channels=conv1_out_channels, out_channels=conv2_out_channels, kernel_size=3, stride=1, padding=1)
 
         # self.bn2 = nn.BatchNorm1d(64)
-        self.conv3 = nn.Conv1d(in_channels=64, out_channels=1, kernel_size=3, stride=1, padding=1)
+        self.conv3 = nn.Conv1d(in_channels=conv2_out_channels, out_channels=1, kernel_size=3, stride=1, padding=1)
 
         # Linear layer to reshape the input to the LSTM
         self.fc = nn.Linear(hidden_size, hidden_size * (sequence_length // 4))

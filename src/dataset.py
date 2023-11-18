@@ -21,7 +21,7 @@ from torch.utils.data import DataLoader
 from torch.nn import DataParallel
 
 def encode_dataset_in_batches(model, dataset, num_workers=4, use_cuda=True):
-    num_workers = cpu_count()
+    num_workers = cpu_count() // 2
     batch_size = 512
     print("num_workers: ", num_workers)
     print("batch_size: ", batch_size)
@@ -50,7 +50,7 @@ def extract_features(model, data_module):
     train_segments, train_labels = [], []
     test_segments, test_labels = [], []
 
-    num_workers = cpu_count()
+    num_workers = cpu_count() // 2
     batch_size = 512
     print("num_workers: ", num_workers)
     print("batch_size: ", batch_size)
@@ -170,7 +170,12 @@ class SegmentedSignalDataset(Dataset):
 
 
 class SegmentedSignalDataModule(pl.LightningDataModule):
-    def __init__(self, dataset_path=config['DATASET_PATH'],batch_size=config['BATCH_SIZE'], val_split=config['VAL_SPLIT']):
+    def __init__(self,
+                 dataset_path=config['DATASET_PATH'],
+                 batch_size=config['BATCH_SIZE'],
+                 val_split=config['VAL_SPLIT'],
+                 dataset_subset=config['DATASET_SUBSET'],
+                 ):
         super().__init__()
         self.dataset_path = Path(dataset_path)
         self.batch_size = batch_size
@@ -180,6 +185,8 @@ class SegmentedSignalDataModule(pl.LightningDataModule):
         self.raw_signals = None
         self.raw_labels = None
         self.scaler = None
+        self.label_encoder = None
+        self.dataset_subset = dataset_subset
 
         # take 90% of the cpus
         # self.num_workers = int(cpu_count() * 0.9)
@@ -198,6 +205,12 @@ class SegmentedSignalDataModule(pl.LightningDataModule):
 
         # make the length of the data equal to 100k
         data['data'] = data['data'].map(lambda x: x[:len(x)-4])
+
+        if self.dataset_subset == 'idle':
+            data = data[data['state'] != 'operations']
+
+        elif self.dataset_subset == 'default':
+            pass
 
         signals = np.stack(data.data.values)
         labels = data['category'].to_numpy()

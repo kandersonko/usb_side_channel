@@ -4,7 +4,7 @@
 #SBATCH --ntasks=1
 #SBATCH -p gpu-volatile-ui
 #SBATCH --gres=gpu:rtxa6000:1
-#SBATCH --time=06:00:00
+#SBATCH --time=24:00:00
 #SBATCH --array=0-3
 #SBATCH --output=jobs/sweep_%A_%a.stdout
 #SBATCH --error=jobs/sweep_%A_%a.stderr
@@ -30,5 +30,5 @@ export CUDA_VISIBLE_DEVICES=$SLURM_ARRAY_TASK_ID
 sweep_id=o44mdnin 
 # wandb agent koffi-anderson/USB/${sweep_id}
 
-srun --exclusive --gres=gpu:rtxa6000:1 -l wandb agent koffi-anderson/USB/${sweep_id}
-
+# srun --exclusive --gres=gpu:rtxa6000:1 -l wandb agent koffi-anderson/USB/${sweep_id}
+srun --exclusive --gres=gpu:rtxa6000:1 -l wandb agent --count 1 koffi-anderson/USB/${sweep_id}

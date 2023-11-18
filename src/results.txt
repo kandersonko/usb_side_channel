@@ -1,0 +1,42 @@
+Inference
+Setting up the dataset
+Setting up the model
+Extracting the segments
+Evaluating the model
+dataset shape:  (535950, 1000) (535950,)
+
+Without feature extraction
+Classifier:  RandomForestClassifier
+Accuracy: 87.3384
+                 precision    recall  f1-score   support
+
+          cable       1.00      1.00      1.00     11989
+    flash_drive       0.78      0.90      0.84     11698
+       keyboard       0.81      0.80      0.81     12049
+microcontroller       0.81      0.70      0.75     11941
+          mouse       0.97      0.97      0.97     11873
+
+       accuracy                           0.87     59550
+      macro avg       0.87      0.87      0.87     59550
+   weighted avg       0.87      0.87      0.87     59550
+
+
+Extracting features
+num_workers:  128
+batch_size:  512
+Training the classifier
+With feature extraction
+Classifier:  RandomForestClassifier
+Accuracy: 97.5029
+                 precision    recall  f1-score   support
+
+          cable       1.00      1.00      1.00     11989
+    flash_drive       0.95      0.96      0.96     11698
+       keyboard       0.96      0.95      0.96     12049
+microcontroller       0.97      0.96      0.96     11941
+          mouse       1.00      1.00      1.00     11873
+
+       accuracy                           0.98     59550
+      macro avg       0.97      0.98      0.97     59550
+   weighted avg       0.98      0.98      0.98     59550
+

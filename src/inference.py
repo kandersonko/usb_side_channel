@@ -1,5 +1,7 @@
 from sklearn.ensemble import RandomForestClassifier
 
+import numpy as np
+
 import torch
 
 import lightning.pytorch as pl
@@ -66,9 +68,12 @@ def main():
 
     print("Evaluating the model")
 
+    output_file_content = ""
+
     # training a random forest classifier without feature extraction
     classifier = RandomForestClassifier(max_depth=10, random_state=42, n_jobs=-1)
     accuracy, report = evaluate_detection(classifier, X_train, y_train, X_test, y_test, target_names)
+
 
     print("dataset shape: ", X_train.shape, y_train.shape)
 
@@ -81,6 +86,12 @@ def main():
     print(f"Accuracy: {accuracy*100.0:.4f}")
     print(report)
     print()
+
+    output_file_content += "dataset shape: " + str(X_train.shape) + " " + str(y_train.shape) + "\n"
+    output_file_content += "Without feature extraction\n"
+    output_file_content += "Classifier: " + str(classifier.__class__.__name__) + "\n"
+    output_file_content += "Accuracy: " + str(accuracy*100.0) + "\n"
+    output_file_content += str(report) + "\n"
 
 
     print("Extracting features")
@@ -103,6 +114,27 @@ def main():
     print("Classifier: ", classifier.__class__.__name__)
     print(f"Accuracy: {accuracy*100.0:.4f}")
     print(report)
+
+    output_file_content += "With feature extraction\n"
+    output_file_content += "Classifier: " + str(classifier.__class__.__name__) + "\n"
+    output_file_content += "Accuracy: " + str(accuracy*100.0) + "\n"
+    output_file_content += str(report) + "\n"
+
+
+    # save the output
+    with open("output.txt", "w") as f:
+        f.write(output_file_content)
+
+    # save the encoded features and labels dataset to disk to the data/ folder
+    # using numpy
+
+    np.save("data/X_train_encoded.npy", X_train_encoded)
+    np.save("data/y_train.npy", y_train)
+    np.save("data/X_test_encoded.npy", X_test_encoded)
+    np.save("data/y_test.npy", y_test)
+
+
+
 
 if __name__ == '__main__':
     main()
