@@ -233,7 +233,7 @@ class SegmentedSignalDataModule(pl.LightningDataModule):
         encoded_category_labels = category_label_encoder.fit_transform(category_labels)
 
         # Encoding class labels (anomaly detection)
-        class_label_encoder = LabelBinarizer()
+        class_label_encoder = LabelEncoder()
         encoded_class_labels = class_label_encoder.fit_transform(class_labels)
 
         # Combining category and class labels for SMOTE

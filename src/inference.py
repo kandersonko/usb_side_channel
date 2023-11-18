@@ -64,7 +64,6 @@ def main():
     # Extract segments and category and class labels from the training dataset
     X_train, y_train_category, y_train_class, X_test, y_test_category, y_test_class = extract_segments(data_module)
 
-
     category_target_names = data_module.target_names
     class_target_names = data_module.class_target_names
 
