@@ -43,12 +43,13 @@ def encode_dataset_in_batches(model, dataset, num_workers=4, use_cuda=True):
     return torch.cat(encoded_batches).numpy()
 
 
+
 def extract_features(model, data_module):
     """
-    Extracts the segments and labels from the training and validation datasets
+    Extracts encoded features and labels from the training and validation datasets
     """
-    train_segments, train_labels = [], []
-    test_segments, test_labels = [], []
+    train_segments, train_category_labels, train_class_labels = [], [], []
+    test_segments, test_category_labels, test_class_labels = [], [], []
 
     num_workers = cpu_count() // 2
     batch_size = 512
@@ -60,79 +61,93 @@ def extract_features(model, data_module):
 
     with torch.no_grad():
         for batch in tqdm(data_module.train_dataloader(num_workers=num_workers, batch_size=batch_size)):
-            segments, batch_labels = batch
+            segments, (category_labels, class_labels) = batch
             if torch.cuda.is_available():
                 segments = segments.cuda(non_blocking=True)
-                batch_labels = batch_labels.cuda(non_blocking=True)
+                category_labels = category_labels.cuda(non_blocking=True)
+                class_labels = class_labels.cuda(non_blocking=True)
             segments_encoded = model.module.encoder(segments).detach()
             train_segments.append(segments_encoded)
-            train_labels.append(batch_labels)
+            train_category_labels.append(category_labels)
+            train_class_labels.append(class_labels)
 
         for batch in tqdm(data_module.val_dataloader(num_workers=num_workers, batch_size=batch_size)):
-            segments, batch_labels = batch
+            segments, (category_labels, class_labels) = batch
             if torch.cuda.is_available():
                 segments = segments.cuda(non_blocking=True)
-                batch_labels = batch_labels.cuda(non_blocking=True)
+                category_labels = category_labels.cuda(non_blocking=True)
+                class_labels = class_labels.cuda(non_blocking=True)
             segments_encoded = model.module.encoder(segments).detach()
             test_segments.append(segments_encoded)
-            test_labels.append(batch_labels)
+            test_category_labels.append(category_labels)
+            test_class_labels.append(class_labels)
 
     # Flatten the segments and labels arrays
     X_train = torch.cat(train_segments).cpu().numpy()
-    y_train = torch.cat(train_labels).cpu().numpy()
+    y_train_category = torch.cat(train_category_labels).cpu().numpy()
+    y_train_class = torch.cat(train_class_labels).cpu().numpy()
 
     X_test = torch.cat(test_segments).cpu().numpy()
-    y_test = torch.cat(test_labels).cpu().numpy()
+    y_test_category = torch.cat(test_category_labels).cpu().numpy()
+    y_test_class = torch.cat(test_class_labels).cpu().numpy()
 
-    return X_train, y_train, X_test, y_test
+    return X_train, y_train_category, y_train_class, X_test, y_test_category, y_test_class
+
 
 
 def extract_segments(data_module):
     """
     Extracts the segments and labels from the training and validation datasets
     """
-    train_segments, train_labels = [], []
-    test_segments, test_labels = [], []
+    train_segments, train_category_labels, train_class_labels = [], [], []
+    test_segments, test_category_labels, test_class_labels = [], [], []
 
     num_workers = cpu_count()
     batch_size = 512
 
+    # Extracting data from the training dataloader
     for batch in tqdm(data_module.train_dataloader(num_workers=num_workers, batch_size=batch_size)):
-        segments, batch_labels = batch
+        segments, (category_labels, class_labels) = batch
         train_segments.append(segments)
-        train_labels.append(batch_labels)
+        train_category_labels.append(category_labels)
+        train_class_labels.append(class_labels)
 
+    # Extracting data from the validation dataloader
     for batch in tqdm(data_module.val_dataloader(num_workers=num_workers, batch_size=batch_size)):
-        segments, batch_labels = batch
+        segments, (category_labels, class_labels) = batch
         test_segments.append(segments)
-        test_labels.append(batch_labels)
+        test_category_labels.append(category_labels)
+        test_class_labels.append(class_labels)
 
     # Flatten the segments and labels arrays
     X_train = torch.cat(train_segments).numpy()
-    y_train = torch.cat(train_labels).numpy()
+    y_train_category = torch.cat(train_category_labels).numpy()
+    y_train_class = torch.cat(train_class_labels).numpy()
 
     X_test = torch.cat(test_segments).numpy()
-    y_test = torch.cat(test_labels).numpy()
+    y_test_category = torch.cat(test_category_labels).numpy()
+    y_test_class = torch.cat(test_class_labels).numpy()
 
-    return X_train, y_train, X_test, y_test
+    return X_train, y_train_category, y_train_class, X_test, y_test_category, y_test_class
+
 
 
 class SegmentedSignalDataset(Dataset):
     def __init__(self, signals, labels, window_size=config['WINDOW_SIZE'], overlap_percent=config['OVERLAP'], scaler=None):
         """
         :param signals: A list or array of signals, each with the same length
-        :param labels: A list or array of labels corresponding to each signal
+        :param category_labels: A list or array of category labels corresponding to each signal
+        :param class_labels: A list or array of class labels (normal/anomaly) corresponding to each signal
         :param window_size: The size of the window to apply to each signal
         :param overlap_percent: The percentage of overlap between windows within the same signal
         """
         self.signals = signals
-        self.labels = labels
+        self.category_labels = category_labels
+        self.class_labels = class_labels
         self.window_size = window_size
         self.overlap_percent = overlap_percent
         assert 0 <= overlap_percent < 1, "Overlap percent must be between 0 and 1"
 
-
-        self.label_encoder = LabelEncoder()
 
         self.step_size = window_size - int(window_size * overlap_percent)
         self.windows, self.window_labels = self._create_windows()
@@ -143,30 +158,29 @@ class SegmentedSignalDataset(Dataset):
     def _create_windows(self):
         windows = []
         window_labels = []
-        for signal, label in zip(self.signals, self.labels):
+        for signal, category_label, class_label in zip(self.signals, self.category_labels, self.class_labels):
             # Ensure each signal starts a new segmentation
             start = 0
             signal_length = len(signal)
             while start + self.window_size <= signal_length:
                 end = start + self.window_size
                 windows.append(signal[start:end])
-                window_labels.append(label)
+                window_labels.append((category_label, class_label))
                 start += self.step_size
 
-        # windows = np.array(windows)
-        # window_labels = np.array(window_labels)
-
         return windows, window_labels
+
 
     def __len__(self):
         return len(self.windows)
 
     def __getitem__(self, idx):
         window = self.windows[idx]
-        label = self.window_labels[idx]
+        category_label, class_label = self.window_labels[idx]
         window_tensor = torch.tensor(window, dtype=torch.float32)
-        label_tensor = torch.tensor(label, dtype=torch.long)  # Assuming labels are for classification
-        return window_tensor, label_tensor
+        category_label_tensor = torch.tensor(category_label, dtype=torch.long)
+        class_label_tensor = torch.tensor(class_label, dtype=torch.long)
+        return window_tensor, (category_label_tensor, class_label_tensor)
 
 
 class SegmentedSignalDataModule(pl.LightningDataModule):
@@ -185,7 +199,7 @@ class SegmentedSignalDataModule(pl.LightningDataModule):
         self.raw_signals = None
         self.raw_labels = None
         self.scaler = None
-        self.label_encoder = None
+        self.label_category_encoder = None
         self.dataset_subset = dataset_subset
 
         # take 90% of the cpus
@@ -209,47 +223,46 @@ class SegmentedSignalDataModule(pl.LightningDataModule):
         if self.dataset_subset == 'idle':
             data = data[data['state'] != 'operations']
 
-        elif self.dataset_subset == 'default':
-            pass
-
+        # Prepare signals
         signals = np.stack(data.data.values)
-        labels = data['category'].to_numpy()
+        category_labels = data['category'].to_numpy()
+        class_labels = data['class'].to_numpy()
 
-        # balance the dataset
+        # Encoding category labels
+        category_label_encoder = LabelEncoder()
+        encoded_category_labels = category_label_encoder.fit_transform(category_labels)
+
+        # Encoding class labels (anomaly detection)
+        class_label_encoder = LabelBinarizer()
+        encoded_class_labels = class_label_encoder.fit_transform(class_labels)
+
+        # Combining category and class labels for SMOTE
+        combined_labels = np.column_stack((encoded_category_labels, encoded_class_labels))
+
+        # Balancing the dataset with SMOTE
         smote = SMOTE()
-        signals, labels = smote.fit_resample(signals, labels)
+        signals, combined_labels = smote.fit_resample(signals, combined_labels)
 
-        self.label_encoder = LabelEncoder()
-
-        self.signals = signals
-        self.labels = self.label_encoder.fit_transform(labels)
-
+        # Separating the combined labels
+        self.category_labels = combined_labels[:, :-1].flatten()
+        self.class_labels = combined_labels[:, -1]
 
         # Split the dataset
-        val_size = int(len(self.signals) * self.val_split)
-        train_size = len(self.signals) - val_size
+        val_size = int(len(signals) * self.val_split)
+        train_size = len(signals) - val_size
 
-        # apply standard scaer to the training data using the train_size
+        # Scaling the data
         self.scaler = StandardScaler()
-        train_signals = self.scaler.fit_transform(self.signals[:train_size].reshape(-1, 1)).reshape(self.signals[:train_size].shape)
-        # apply the standard scaler transform on the rest of the data using the train_size
+        train_signals = self.scaler.fit_transform(signals[:train_size])
+        val_signals = self.scaler.transform(signals[train_size:])
 
-        val_signals = self.scaler.transform(self.signals[train_size:].reshape(-1, 1)).reshape(self.signals[train_size:].shape)
+        # Preparing the final dataset
+        self.train_dataset = SegmentedSignalDataset(train_signals, self.category_labels[:train_size], self.class_labels[:train_size])
+        self.val_dataset = SegmentedSignalDataset(val_signals, self.category_labels[train_size:], self.class_labels[train_size:])
 
-        self.signals = np.concatenate([train_signals, val_signals]).reshape(self.signals.shape)
-
-        # Create the full dataset
-        self.dataset = SegmentedSignalDataset(self.signals, self.labels)
-
-
-        # compute the new train and val sizes
-        val_size = int(len(self.dataset) * self.val_split)
-        train_size = len(self.dataset) - val_size
-
-        self.train_dataset, self.val_dataset = random_split(self.dataset, [train_size, val_size])
-
-        self.target_names = self.label_encoder.classes_
-
+        # Saving the label names
+        self.category_target_names = category_label_encoder.classes_
+        self.class_target_names = class_label_encoder.classes_
 
     def train_dataloader(self, num_workers=None, batch_size=None):
         if batch_size:

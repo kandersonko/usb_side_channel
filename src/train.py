@@ -62,8 +62,15 @@ def merge_config_with_cli_args(config):
     parser.add_argument('--LEARNING_RATE', type=float, default=1e-3)
     # add reconstruction loss weight
     parser.add_argument('--RECONSTRUCTION_LOSS_WEIGHT', type=float, default=1.0)
-    # add class loss weight
-    parser.add_argument('--CLASS_LOSS_WEIGHT', type=float, default=1.0)
+    # add class classification loss weight
+    parser.add_argument('--CLASS_CLASSIFICATION_LOSS_WEIGHT', type=float, default=1.0)
+    # add class classification loss weight
+    parser.add_argument('--CATEGORY_CLASSIFICATION_LOSS_WEIGHT', type=float, default=1.0)
+
+    # add number of class classes
+    parser.add_argument('--NUM_CLASS_CLASSES', type=int, default=2)
+    # add number of category classes
+    parser.add_argument('--NUM_CATEGORY_CLASSES', type=int, default=2)
 
     # add dataset subset
     parser.add_argument('--DATASET_SUBSET', type=str, default='all')
@@ -209,21 +216,27 @@ def main():
 
     if trainer.is_global_zero:
         print("Extracting the segments")
-    # Extract segments and labels from the training dataset
-    X_train, y_train, X_test, y_test = extract_segments(data_module)
 
-    target_names = data_module.target_names
+    # Extract segments and labels from the training dataset
+    # X_train, y_train, X_test, y_test = extract_segments(data_module)
+
+    X_train, y_train_category, y_train_class, X_test, y_test_category, y_test_class = extract_segments(data_module)
+
+    target_category_names = data_module.category_target_names
+    target_class_names = data_module.class_target_names
 
     if trainer.is_global_zero:
         print("Evaluating the model")
 
+
     # Determine the process rank using the environment variable
     if trainer.is_global_zero:
+        print("Task: Identification")
         # training a random forest classifier without feature extraction
         classifier = RandomForestClassifier(max_depth=10, random_state=42, n_jobs=-1)
-        accuracy, report = evaluate_detection(classifier, X_train, y_train, X_test, y_test, target_names)
+        accuracy, report = evaluate_detection(classifier, X_train, y_train_category, X_test, y_test_category, target_category_names)
 
-        print("dataset shape: ", X_train.shape, y_train.shape)
+        print("dataset category shape: ", X_train.shape, y_train_category.shape)
 
         # log the results to wandb
         wandb.log({"identification accuracy (random forest no feature extraction)": accuracy})
@@ -236,6 +249,23 @@ def main():
         print(report)
         print()
 
+    if trainer.is_global_zero:
+        print("Task: Classification")
+        classifier = RandomForestClassifier(max_depth=10, random_state=42, n_jobs=-1)
+        accuracy, report = evaluate_detection(classifier, X_train, y_train_class, X_test, y_test_class, target_class_names)
+
+        print("dataset class shape: ", X_train.shape, y_train_class.shape)
+
+        # log the results to wandb
+        wandb.log({"classification accuracy (random forest no feature extraction)": accuracy})
+
+
+        print()
+        print("Without feature extraction")
+        print("Classifier: ", classifier.__class__.__name__)
+        print(f"Accuracy: {accuracy*100.0:.4f}")
+        print(report)
+        print()
 
     # # training a random forest classifier with feature extraction
     # X_train_encoded = encode_dataset_in_batches(model, torch.tensor(X_train, dtype=torch.float32))
@@ -243,15 +273,20 @@ def main():
 
     if trainer.is_global_zero:
         print("Extracting features")
-    X_train_encoded, y_train, X_test_encoded, y_test = extract_features(model, data_module)
+
+    # X_train_encoded, y_train, X_test_encoded, y_test = extract_features(model, data_module)
+
+    X_train_encoded, y_train_category, y_train_class, X_test_encoded, y_test_category, y_test_class = extract_features(model, data_module)
+
 
     if trainer.is_global_zero:
         print("Training the classifier")
 
     if trainer.is_global_zero:
+        print("Task: Identification")
         classifier = RandomForestClassifier(max_depth=10, random_state=42, n_jobs=-1)
 
-        accuracy, report = evaluate_detection(classifier, X_train_encoded, y_train, X_test_encoded, y_test, target_names)
+        accuracy, report = evaluate_detection(classifier, X_train_encoded, y_train_category, X_test_encoded, y_test_category, target_names)
 
         # log the results to wandb
         wandb.log({"identification accuracy (random forest with feature extraction)": accuracy})
@@ -261,6 +296,19 @@ def main():
         print(f"Accuracy: {accuracy*100.0:.4f}")
         print(report)
 
+    if trainer.is_global_zero:
+        print("Task: Classification")
+        classifier = RandomForestClassifier(max_depth=10, random_state=42, n_jobs=-1)
+
+        accuracy, report = evaluate_detection(classifier, X_train_encoded, y_train_class, X_test_encoded, y_test_class, target_names)
+
+        # log the results to wandb
+        wandb.log({"classification accuracy (random forest with feature extraction)": accuracy})
+
+        print("With feature extraction")
+        print("Classifier: ", classifier.__class__.__name__)
+        print(f"Accuracy: {accuracy*100.0:.4f}")
+        print(report)
 
     # Close wandb run
     wandb.finish()

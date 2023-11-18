@@ -61,21 +61,24 @@ def main():
 
     print("Extracting the segments")
 
-    # Extract segments and labels from the training dataset
-    X_train, y_train, X_test, y_test = extract_segments(data_module)
+    # Extract segments and category and class labels from the training dataset
+    X_train, y_train_category, y_train_class, X_test, y_test_category, y_test_class = extract_segments(data_module)
 
-    target_names = data_module.target_names
+
+    category_target_names = data_module.target_names
+    class_target_names = data_module.class_target_names
 
     print("Evaluating the model")
+    print("Task: Identification")
 
     output_file_content = ""
 
     # training a random forest classifier without feature extraction
     classifier = RandomForestClassifier(max_depth=10, random_state=42, n_jobs=-1)
-    accuracy, report = evaluate_detection(classifier, X_train, y_train, X_test, y_test, target_names)
+    accuracy, report = evaluate_detection(classifier, X_train, y_train_category, X_test, y_test_category, category_target_names)
 
 
-    print("dataset shape: ", X_train.shape, y_train.shape)
+    print("dataset shape: ", X_train.shape)
 
     # log the results to wandb
 
@@ -87,11 +90,37 @@ def main():
     print(report)
     print()
 
-    output_file_content += "dataset shape: " + str(X_train.shape) + " " + str(y_train.shape) + "\n"
+    output_file_content += "dataset shape: " + str(X_train.shape)
     output_file_content += "Without feature extraction\n"
     output_file_content += "Classifier: " + str(classifier.__class__.__name__) + "\n"
     output_file_content += "Accuracy: " + str(accuracy*100.0) + "\n"
     output_file_content += str(report) + "\n"
+
+
+    print("Task: Classification")
+
+    output_file_content = ""
+
+    # training a random forest classifier without feature extraction
+    classifier = RandomForestClassifier(max_depth=10, random_state=42, n_jobs=-1)
+    accuracy, report = evaluate_detection(classifier, X_train, y_train_class, X_test, y_test_class, class_target_names)
+
+
+    # log the results to wandb
+
+
+    print()
+    print("Without feature extraction")
+    print("Classifier: ", classifier.__class__.__name__)
+    print(f"Accuracy: {accuracy*100.0:.4f}")
+    print(report)
+    print()
+
+    output_file_content += "Without feature extraction\n"
+    output_file_content += "Classifier: " + str(classifier.__class__.__name__) + "\n"
+    output_file_content += "Accuracy: " + str(accuracy*100.0) + "\n"
+    output_file_content += str(report) + "\n"
+
 
 
     print("Extracting features")
@@ -100,13 +129,15 @@ def main():
     # X_train_encoded = encode_dataset_in_batches(model, torch.tensor(X_train, dtype=torch.float32))
     # X_test_encoded = encode_dataset_in_batches(model, torch.tensor(X_test, dtype=torch.float32))
 
-    X_train_encoded, y_train, X_test_encoded, y_test = extract_features(model, data_module)
+    X_train_encoded, y_train_category, y_train_class, X_test_encoded, y_test_category, y_test_class = extract_features(model, data_module)
 
     print("Training the classifier")
 
+    print("Task: Identification")
+
     classifier = RandomForestClassifier(max_depth=10, random_state=42, n_jobs=-1)
 
-    accuracy, report = evaluate_detection(classifier, X_train_encoded, y_train, X_test_encoded, y_test, target_names)
+    accuracy, report = evaluate_detection(classifier, X_train_encoded, y_train_category, X_test_encoded, y_test_category, category_target_names)
 
     # log the results to wandb
 
@@ -120,6 +151,23 @@ def main():
     output_file_content += "Accuracy: " + str(accuracy*100.0) + "\n"
     output_file_content += str(report) + "\n"
 
+    print("Task: Classification")
+
+    classifier = RandomForestClassifier(max_depth=10, random_state=42, n_jobs=-1)
+
+    accuracy, report = evaluate_detection(classifier, X_train_encoded, y_train_class, X_test_encoded, y_test_class, class_target_names)
+
+    # log the results to wandb
+
+    print("With feature extraction")
+    print("Classifier: ", classifier.__class__.__name__)
+    print(f"Accuracy: {accuracy*100.0:.4f}")
+    print(report)
+
+    output_file_content += "With feature extraction\n"
+    output_file_content += "Classifier: " + str(classifier.__class__.__name__) + "\n"
+    output_file_content += "Accuracy: " + str(accuracy*100.0) + "\n"
+    output_file_content += str(report) + "\n"
 
     # save the output
     with open("output.txt", "w") as f:
@@ -129,9 +177,11 @@ def main():
     # using numpy
 
     np.save("data/X_train_encoded.npy", X_train_encoded)
-    np.save("data/y_train.npy", y_train)
+    np.save("data/y_train_category.npy", y_train_category)
+    np.save("data/y_train_class.npy", y_train_category)
     np.save("data/X_test_encoded.npy", X_test_encoded)
-    np.save("data/y_test.npy", y_test)
+    np.save("data/y_test_category.npy", y_test)
+    np.save("data/y_test_class.npy", y_test)
 
 
 

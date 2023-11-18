@@ -17,16 +17,18 @@ from config import default_config as config
 
 class Autoencoder(pl.LightningModule):
     def __init__(
-            self,
-            num_classes=config['NUM_CLASSES'],
-            reconstruction_loss_weight=config['RECONSTRUCTION_LOSS_WEIGHT'],
-            classification_loss_weight=config['CLASSIFICATION_LOSS_WEIGHT'],
-            bottleneck_dim=config['BOTTLENECK_DIM'],
-            learning_rate=config['LEARNING_RATE'],
-            sequence_length=config['WINDOW_SIZE'],
-            learning_rate_patience=config['LEARNING_RATE_PATIENCE'],
-            dropout=config['DROPOUT'],
-            monitor=config['MONITOR_METRIC'],
+        self,
+        num_category_classes=config['NUM_CATEGORY_CLASSES'],
+        num_class_classes=config['NUM_CLASS_CLASSES'],  # Number of classes for anomaly detection (usually 2: normal/anomaly)
+        reconstruction_loss_weight=config['RECONSTRUCTION_LOSS_WEIGHT'],
+        category_classification_loss_weight=config['CATEGORY_CLASSIFICATION_LOSS_WEIGHT'],
+        class_classification_loss_weight=config['CLASS_CLASSIFICATION_LOSS_WEIGHT'],
+        bottleneck_dim=config['BOTTLENECK_DIM'],
+        learning_rate=config['LEARNING_RATE'],
+        sequence_length=config['WINDOW_SIZE'],
+        learning_rate_patience=config['LEARNING_RATE_PATIENCE'],
+        dropout=config['DROPOUT'],
+        monitor=config['MONITOR_METRIC'],
     ):
         super().__init__()
 
@@ -37,17 +39,16 @@ class Autoencoder(pl.LightningModule):
         self.bottleneck_dim = bottleneck_dim
         self.batch_size = config['BATCH_SIZE']
 
-        self.num_classes = num_classes
         self.reconstruction_loss_weight = reconstruction_loss_weight
-        self.classification_loss_weight = classification_loss_weight
 
+        self.category_classification_loss_weight = category_classification_loss_weight
+        self.class_classification_loss_weight = class_classification_loss_weight
+
+        self.num_class_classes = num_class_classes
+        self.num_category_classes = num_category_classes
 
         # conv1d expects (batch, channels, seq_len)
         self.example_input_array = torch.rand(self.batch_size, sequence_length)
-
-        # Initialize accuracy metrics for multiclass classification
-        self.train_accuracy = Accuracy(num_classes=self.num_classes, task="multiclass")
-        self.val_accuracy = Accuracy(num_classes=self.num_classes, task="multiclass")
 
 
         # hidden_dims = [512, 256 ]
@@ -80,12 +81,20 @@ class Autoencoder(pl.LightningModule):
             conv2_out_channels=conv1_out_channels,
         )
 
-        # Classifier Head
-        self.classifier = nn.Linear(bottleneck_dim, num_classes)
+        # Classifier Heads
+        self.category_classifier = nn.Linear(bottleneck_dim, num_category_classes)
+        self.class_classifier = nn.Linear(bottleneck_dim, num_class_classes)
+
+        # Accuracy metrics for both category and class classification
+        self.train_category_accuracy = Accuracy(num_classes=num_category_classes, task="multiclass")
+        self.val_category_accuracy = Accuracy(num_classes=num_category_classes, task="multiclass")
+        self.train_class_accuracy = Accuracy(num_classes=num_class_classes, task="multiclass")
+        self.val_class_accuracy = Accuracy(num_classes=num_class_classes, task="multiclass")
 
         # Loss Functions
-        self.reconstruction_loss_fn = nn.MSELoss()
-        self.classification_loss_fn = nn.CrossEntropyLoss()
+        self.category_classification_loss_fn = nn.CrossEntropyLoss()
+        self.class_classification_loss_fn = nn.CrossEntropyLoss()
+
 
     def forward(self, x):
         # import pdb; pdb.set_trace()
@@ -93,42 +102,51 @@ class Autoencoder(pl.LightningModule):
         decoded = self.decoder(encoded)
 
         # Classify based on the encoded representation
-        classification = self.classifier(encoded)
-        return decoded, classification
+        category_classification = self.category_classifier(encoded)
+        class_classification = self.class_classifier(encoded)
+        return decoded, category_classification, class_classification
 
     def training_step(self, batch, batch_idx):
-        x, y = batch
-        x_hat, y_hat = self.forward(x)
+        x, (y_category, y_class) = batch
+        x_hat, y_category_hat, y_class_hat = self.forward(x)
 
         # Compute losses
         reconstruction_loss = self.reconstruction_loss_fn(x_hat, x) * self.reconstruction_loss_weight
-        classification_loss = self.classification_loss_fn(y_hat, y) * self.classification_loss_weight
-        total_loss = reconstruction_loss + classification_loss
+        category_classification_loss = self.category_classification_loss_fn(y_category_hat, y_category) * self.category_classification_loss_weight
+        class_classification_loss = self.class_classification_loss_fn(y_class_hat, y_class) * self.class_classification_loss_weight
+        total_loss = reconstruction_loss + category_classification_loss + class_classification_loss
 
-        # Update accuracy metric
-        self.train_accuracy(y_hat, y)
+        # Update accuracy metrics
+        self.train_category_accuracy(y_category_hat, y_category)
+        self.train_class_accuracy(y_class_hat, y_class)
 
+        # Logging metrics
         self.log('train_loss', total_loss, sync_dist=True, prog_bar=True)
-        self.log('train_accuracy', self.train_accuracy, sync_dist=True, prog_bar=True)
+        self.log('train_category_accuracy', self.train_category_accuracy, sync_dist=True, prog_bar=True)
+        self.log('train_class_accuracy', self.train_class_accuracy, sync_dist=True, prog_bar=True)
         self.log('train_recon_loss', reconstruction_loss, sync_dist=True)
-        self.log('train_class_loss', classification_loss, sync_dist=True)
+        self.log('train_category_class_loss', category_classification_loss, sync_dist=True)
+        self.log('train_class_class_loss', class_classification_loss, sync_dist=True)
         return total_loss
 
-
     def validation_step(self, batch, batch_idx):
-        x, y = batch
-        x_hat, y_hat = self.forward(x)
+        x, (y_category, y_class) = batch
+        x_hat, y_category_hat, y_class_hat = self.forward(x)
+
+        # Compute losses
         reconstruction_loss = self.reconstruction_loss_fn(x_hat, x) * self.reconstruction_loss_weight
-        classification_loss = self.classification_loss_fn(y_hat, y) * self.classification_loss_weight
+        category_classification_loss = self.category_classification_loss_fn(y_category_hat, y_category) * self.category_classification_loss_weight
+        class_classification_loss = self.class_classification_loss_fn(y_class_hat, y_class) * self.class_classification_loss_weight
+        total_loss = reconstruction_loss + category_classification_loss + class_classification_loss
 
-        total_loss = reconstruction_loss + classification_loss
+        # Update accuracy metrics
+        self.val_category_accuracy(y_category_hat, y_category)
+        self.val_class_accuracy(y_class_hat, y_class)
 
-        # Update accuracy metric
-        self.val_accuracy(y_hat, y)
-
+        # Logging metrics
         self.log('val_loss', total_loss, sync_dist=True, prog_bar=True)
-
-        self.log('val_accuracy', self.val_accuracy, sync_dist=True, prog_bar=True)
+        self.log('val_category_accuracy', self.val_category_accuracy, sync_dist=True, prog_bar=True)
+        self.log('val_class_accuracy', self.val_class_accuracy, sync_dist=True, prog_bar=True)
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=self.learning_rate)
