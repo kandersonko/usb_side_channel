@@ -27,8 +27,7 @@ which python
 # Assign each task to a specific GPU
 export CUDA_VISIBLE_DEVICES=$SLURM_ARRAY_TASK_ID
 
-sweep_id=o44mdnin 
+sweep_id=b9jqdanv
 # wandb agent koffi-anderson/USB/${sweep_id}
 
-# srun --exclusive --gres=gpu:rtxa6000:1 -l wandb agent koffi-anderson/USB/${sweep_id}
-srun --exclusive --gres=gpu:rtxa6000:1 -l wandb agent --count 1 koffi-anderson/USB/${sweep_id}
+srun --exclusive --gres=gpu:rtxa6000:1 -l wandb agent koffi-anderson/USB/${sweep_id}

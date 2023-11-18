@@ -1,7 +1,7 @@
 method: bayes
 metric:
-  goal: minimize
-  name: val_loss
+  goal: maximize
+  name: val_accuracy
 parameters:
   BATCH_SIZE:
     distribution: int_uniform
@@ -13,14 +13,26 @@ parameters:
     min: 16
   CLASSIFICATION_LOSS_WEIGHT:
     distribution: uniform
-    max: 0.9
+    max: 1
     min: 0.1
-  RECONSTRUCTION_LOSS_WEIGHT:
-    distribution: uniform
-    max: 0.9
-    min: 0.1
+  CONV1_OUT_CHANNELS:
+    distribution: int_uniform
+    max: 512
+    min: 8
+  CONV2_OUT_CHANNELS:
+    distribution: int_uniform
+    max: 512
+    min: 8
   DROPOUT:
     distribution: uniform
-    max: 0.5
+    max: 0.9
     min: 0.05
+  NUM_LSTM_LAYERS:
+    distribution: int_uniform
+    max: 10
+    min: 1
+  RECONSTRUCTION_LOSS_WEIGHT:
+    distribution: uniform
+    max: 1
+    min: 0.1
 program: train.py

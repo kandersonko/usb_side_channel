@@ -105,13 +105,12 @@ def main():
     # wandb_logger = WandbLogger(project="USB", config=config)
     # wandb_logger.watch(model)
 
-    # wandb.init(project='USB')
-
+    wandb.init(project='USB')
 
     # Update config dictionary with values from wandb.config if available
-    # for key in config.keys():
-    #     if key in wandb.config:
-    #         config[key] = wandb.config[key]
+    for key in config.keys():
+        if key in wandb.config:
+            config[key] = wandb.config[key]
 
 
     # seed everything
