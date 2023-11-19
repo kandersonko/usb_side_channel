@@ -30,12 +30,15 @@ args = parser.parse_args()
 torch.multiprocessing.set_sharing_strategy('file_system')
 
 def main():
-    pl.seed_everything(config['SEED'], workers=True)
 
-    config['BATCH_SIZE'] = 512
+    config['batch_size'] = 512
+
+    config = merge_config_with_cli_args(default_config)
+
+    pl.seed_everything(config['seed'], workers=true)
 
     print("Inference")
-    data_module = SegmentedSignalDataModule(batch_size=config['BATCH_SIZE'], val_split=config['VAL_SPLIT'])
+    data_module = SegmentedSignalDataModule(**config)
 
     print("Setting up the dataset")
     data_module.setup()
@@ -55,7 +58,7 @@ def main():
     # best_model_path = 'best_models/best_model-epoch=49-val_loss=0.11.ckpt'
     best_model_path = args.best_model_path
 
-    model = Autoencoder(bottleneck_dim=config['BOTTLENECK_DIM'])
+    model = Autoencoder(**config)
 
     model.load_state_dict(torch.load(best_model_path)['state_dict'])
 

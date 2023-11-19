@@ -118,7 +118,8 @@ def extract_segments(data_module):
 
 
 class SegmentedSignalDataset(Dataset):
-    def __init__(self, signals, labels, window_size=config['WINDOW_SIZE'], overlap_percent=config['OVERLAP'], scaler=None):
+    def __init__(self, signals, labels, sequence_length, overlap, scaler=None,
+                 **kwargs):
         """
         :param signals: A list or array of signals, each with the same length
         :param labels: A list or array of labels corresponding to each signal
@@ -127,14 +128,15 @@ class SegmentedSignalDataset(Dataset):
         """
         self.signals = signals
         self.labels = labels
+        window_size = sequence_length
         self.window_size = window_size
-        self.overlap_percent = overlap_percent
-        assert 0 <= overlap_percent < 1, "Overlap percent must be between 0 and 1"
+        self.overlap_percent = overlap
+        assert 0 <= overlap < 1, "Overlap percent must be between 0 and 1"
 
 
         self.label_encoder = LabelEncoder()
 
-        self.step_size = window_size - int(window_size * overlap_percent)
+        self.step_size = window_size - int(window_size * self.overlap_percent)
         self.windows, self.window_labels = self._create_windows()
 
         # if scaler:
@@ -171,13 +173,19 @@ class SegmentedSignalDataset(Dataset):
 
 class SegmentedSignalDataModule(pl.LightningDataModule):
     def __init__(self,
-                 dataset_path=config['DATASET_PATH'],
-                 batch_size=config['BATCH_SIZE'],
-                 val_split=config['VAL_SPLIT'],
-                 dataset_subset=config['DATASET_SUBSET'],
+                 dataset_path,
+                 sequence_length,
+                 batch_size,
+                 val_split,
+                 dataset_subset,
+                 target_label,
+                 num_workers,
+                 overlap,
+                 **kwargs,
                  ):
         super().__init__()
         self.dataset_path = Path(dataset_path)
+        self.sequence_length = sequence_length
         self.batch_size = batch_size
         self.val_split = val_split
         self.dataset = None
@@ -187,10 +195,13 @@ class SegmentedSignalDataModule(pl.LightningDataModule):
         self.scaler = None
         self.label_encoder = None
         self.dataset_subset = dataset_subset
+        self.overlap = overlap
+
+        self.target_label = target_label
 
         # take 90% of the cpus
         # self.num_workers = int(cpu_count() * 0.9)
-        self.num_workers = cpu_count() // 2
+        self.num_workers = num_workers
         # if self.trainer:
         #     self.num_workers = self.num_workers_per_cpu * self.trainer.num_gpus
 
@@ -213,7 +224,7 @@ class SegmentedSignalDataModule(pl.LightningDataModule):
             pass
 
         signals = np.stack(data.data.values)
-        labels = data['category'].to_numpy()
+        labels = data[self.target_label].to_numpy()
 
         # balance the dataset
         smote = SMOTE()
@@ -239,7 +250,7 @@ class SegmentedSignalDataModule(pl.LightningDataModule):
         self.signals = np.concatenate([train_signals, val_signals]).reshape(self.signals.shape)
 
         # Create the full dataset
-        self.dataset = SegmentedSignalDataset(self.signals, self.labels)
+        self.dataset = SegmentedSignalDataset(self.signals, self.labels, sequence_length=self.sequence_length, overlap=self.overlap)
 
 
         # compute the new train and val sizes
@@ -273,7 +284,7 @@ class USBDataset(Dataset):
     """
     Dataset class for the USB dataset
     """
-    def __init__(self, data, labels, window_size=config['WINDOW_SIZE'], overlap=config['OVERLAP']):
+    def __init__(self, data, labels, window_size=config['sequence_length'], overlap=config['overlap']):
         """
         Args:
             data (ndarray): The data
@@ -309,7 +320,7 @@ class USBDataset(Dataset):
 
 
 class USBDataModule(pl.LightningDataModule):
-    def __init__(self, dataset_path=config['DATASET_PATH'], batch_size=config['BATCH_SIZE'], val_split=config['VAL_SPLIT'], num_workers=4):
+    def __init__(self, dataset_path=config['dataset_path'], batch_size=config['batch_size'], val_split=config['val_split'], num_workers=4):
         super(USBDataModule, self).__init__()
         self.dataset_path = Path(dataset_path)
         self.batch_size = batch_size

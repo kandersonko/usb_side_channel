@@ -18,24 +18,29 @@ from config import default_config as config
 class Autoencoder(pl.LightningModule):
     def __init__(
             self,
-            num_classes=config['NUM_CLASSES'],
-            reconstruction_loss_weight=config['RECONSTRUCTION_LOSS_WEIGHT'],
-            classification_loss_weight=config['CLASSIFICATION_LOSS_WEIGHT'],
-            bottleneck_dim=config['BOTTLENECK_DIM'],
-            learning_rate=config['LEARNING_RATE'],
-            sequence_length=config['WINDOW_SIZE'],
-            learning_rate_patience=config['LEARNING_RATE_PATIENCE'],
-            dropout=config['DROPOUT'],
-            monitor=config['MONITOR_METRIC'],
+            num_classes,
+            reconstruction_loss_weight,
+            classification_loss_weight,
+            bottleneck_dim,
+            batch_size,
+            learning_rate,
+            sequence_length,
+            learning_rate_patience,
+            conv1_out_channels,
+            conv2_out_channels,
+            num_lstm_layers,
+            dropout,
+            monitor_metric,
+            **kwargs,
     ):
         super().__init__()
 
         self.learning_rate = learning_rate
         self.learning_rate_patience = learning_rate_patience
         self.dropout = dropout
-        self.monitor = monitor
+        self.monitor = monitor_metric
         self.bottleneck_dim = bottleneck_dim
-        self.batch_size = config['BATCH_SIZE']
+        self.batch_size = batch_size
 
         self.num_classes = num_classes
         self.reconstruction_loss_weight = reconstruction_loss_weight
@@ -59,9 +64,6 @@ class Autoencoder(pl.LightningModule):
         # self.encoder = LSTMEncoder(input_size=1, hidden_size=bottleneck_dim, num_layers=2)
         # self.decoder = LSTMDecoder(input_size=1, hidden_size=bottleneck_dim, num_layers=2, sequence_length=sequence_length)
 
-        conv1_out_channels = config['CONV1_OUT_CHANNELS']
-        conv2_out_channels = config['CONV2_OUT_CHANNELS']
-        num_lstm_layers = config['NUM_LSTM_LAYERS']
 
         self.encoder = CNNLSTMEncoder(
             sequence_length=sequence_length,
@@ -70,6 +72,7 @@ class Autoencoder(pl.LightningModule):
             conv1_out_channels=conv1_out_channels,
             conv2_out_channels=conv2_out_channels,
             num_layers=num_lstm_layers,
+            dropout=dropout,
         )
 
         self.decoder = CNNLSTMDecoder(
@@ -78,6 +81,7 @@ class Autoencoder(pl.LightningModule):
             num_layers=num_lstm_layers,
             conv1_out_channels=conv2_out_channels, # we reverse the channels
             conv2_out_channels=conv1_out_channels,
+            dropout=dropout,
         )
 
         # Classifier Head
@@ -286,9 +290,9 @@ class ConvDecoder(nn.Module):
 
 
 class LSTMEncoder(nn.Module):
-    def __init__(self, input_size=1, hidden_size=config['BOTTLENECK_DIM'], num_layers=1):
+    def __init__(self, input_size=1, sequence_length=config['sequence_length'], hidden_size=config['bottleneck_dim'], num_layers=1):
         super().__init__()
-        self.sequence_length = config['WINDOW_SIZE']
+        self.sequence_length = sequence_length
         self.hidden_size = hidden_size
         self.lstm = nn.LSTM(input_size=input_size, hidden_size=hidden_size, num_layers=num_layers, batch_first=True)
 
@@ -300,7 +304,8 @@ class LSTMEncoder(nn.Module):
 
 
 class LSTMDecoder(nn.Module):
-    def __init__(self, input_size=1, hidden_size=config['BOTTLENECK_DIM'], num_layers=1, sequence_length=config['WINDOW_SIZE']):
+    def __init__(self, input_size=1, hidden_size=config['bottleneck_dim'],
+                 num_layers=1, sequence_length=config['sequence_length']):
         super().__init__()
         self.sequence_length = sequence_length
         self.hidden_size = hidden_size
@@ -310,22 +315,6 @@ class LSTMDecoder(nn.Module):
 
         self.linear = nn.Linear(hidden_size, input_size)
 
-
-    # def forward(self, hidden):
-    #     # Initialize a sequence of zeros with shape: (batch_size, sequence_length, hidden_size)
-    #     batch_size = hidden.size(1)
-    #     # Create initial input for LSTM
-    #     # We expect hidden to be of shape (num_layers, batch_size, hidden_size)
-    #     # We need to create a (batch_size, sequence_length, hidden_size) tensor
-    #     decoder_input = torch.zeros(batch_size, self.sequence_length, self.hidden_size, device=hidden.device)
-    #     lstm_out, _ = self.lstm(decoder_input, (hidden, torch.zeros_like(hidden)))
-    #     # Pass each time step through the linear layer to get the final output
-    #     # Flatten the output for the linear layer
-    #     lstm_out = lstm_out.contiguous().view(batch_size * self.sequence_length, self.hidden_size)
-    #     decoded = self.linear(lstm_out)
-    #     # Reshape to get the desired output shape (batch_size, sequence_length)
-    #     decoded = decoded.view(batch_size, self.sequence_length)
-    #     return decoded
 
     def forward(self, hidden):
         # `hidden` is the feature vector from the encoder and has a shape of: (batch_size, hidden_size)
@@ -378,12 +367,14 @@ class Attention(nn.Module):
 class CNNLSTMEncoder(nn.Module):
     def __init__(self, sequence_length,
                  num_features,
-                 hidden_size=config['BOTTLENECK_DIM'],
-                 conv1_out_channels=config['CONV1_OUT_CHANNELS'],
-                 num_layers=config['NUM_LSTM_LAYERS'],
-                 conv2_out_channels=config['CONV2_OUT_CHANNELS'],
-                 dropout=config['DROPOUT']):
-        super(CNNLSTMEncoder, self).__init__()
+                 hidden_size,
+                 conv1_out_channels,
+                 num_layers,
+                 conv2_out_channels,
+                 dropout,
+                 **kwargs,
+                 ):
+        super().__init__()
         self.sequence_length = sequence_length
         self.hidden_size = hidden_size
         self.num_layers = num_layers
@@ -448,13 +439,16 @@ class CNNLSTMEncoder(nn.Module):
 
 
 class CNNLSTMDecoder(nn.Module):
-    def __init__(self, sequence_length,
-                 hidden_size=config['BOTTLENECK_DIM'],
-                 num_layers=config['NUM_LSTM_LAYERS'],
-                 conv1_out_channels=config['CONV2_OUT_CHANNELS'], # we reverse the channels
-                 conv2_out_channels=config['CONV1_OUT_CHANNELS'],
-                 dropout=config['DROPOUT']):
-        super(CNNLSTMDecoder, self).__init__()
+    def __init__(self,
+                 sequence_length,
+                 hidden_size,
+                 num_layers,
+                 conv1_out_channels, # we reverse the channels
+                 conv2_out_channels,
+                 dropout,
+                 **kwargs,
+                 ):
+        super().__init__()
         self.sequence_length = sequence_length
         self.hidden_size = hidden_size
         self.num_layers = num_layers
