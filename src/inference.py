@@ -16,26 +16,26 @@ import wandb
 from models.autoencoders import Autoencoder
 from models.utils import evaluate_detection
 from dataset import extract_segments, SegmentedSignalDataModule, encode_dataset_in_batches, extract_features
-from config import default_config as config
 
-import argparse
+from config import default_config, merge_config_with_cli_args
+
 
 # from callbacks import InputMonitor
 
 # path the best model path as an argument
-parser = argparse.ArgumentParser()
-parser.add_argument('-b', '--best_model_path', type=str, help='path to the best model', required=True)
-args = parser.parse_args()
 
 torch.multiprocessing.set_sharing_strategy('file_system')
 
 def main():
+    config = merge_config_with_cli_args(default_config)
+
+    if config['model_path'] is None:
+        raise ValueError("Provide a model path")
 
     config['batch_size'] = 512
 
-    config = merge_config_with_cli_args(default_config)
 
-    pl.seed_everything(config['seed'], workers=true)
+    pl.seed_everything(config['seed'], workers=True)
 
     print("Inference")
     data_module = SegmentedSignalDataModule(**config)
@@ -56,7 +56,7 @@ def main():
     # best_model_path = checkpoint_callback.best_model_path
     # best_model_path = 'best_models/best_model-epoch=16-val_loss=0.36.ckpt'
     # best_model_path = 'best_models/best_model-epoch=49-val_loss=0.11.ckpt'
-    best_model_path = args.best_model_path
+    best_model_path = config['model_path']
 
     model = Autoencoder(**config)
 

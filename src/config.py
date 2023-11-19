@@ -3,12 +3,15 @@ import yaml
 
 from multiprocessing import cpu_count
 
-# Load the configuration parameters from config.yaml
-with open('config.yaml', 'r') as yaml_file:
-    global default_config
-    default_config = yaml.safe_load(yaml_file)
+global default_config
 
 
+# Load the configuration from the YAML file
+def load_config():
+    with open('config.yaml', 'r') as yaml_file:
+        return yaml.safe_load(yaml_file)
+
+default_config = load_config()
 
 argparser = argparse.ArgumentParser()
 
@@ -27,6 +30,8 @@ def merge_config_with_cli_args(config):
     parser.add_argument('--max_epochs', type=int, default=100)
     parser.add_argument('--min_epochs', type=int, default=10)
     parser.add_argument('--early_stopping_patience', type=int, default=10)
+    # add learning rate patience
+    parser.add_argument('--learning_rate_patience', type=int, default=3)
     parser.add_argument('--monitor_metric', type=str, default='val_loss')
     parser.add_argument('--checkpoint_path', type=str, default='best_models/')
     parser.add_argument('--accumulate_grad_batches', type=int, default=1)
@@ -59,6 +64,8 @@ def merge_config_with_cli_args(config):
     # add number of classes
     parser.add_argument('--num_classes', type=int, default=5)
 
+    # add model path
+    parser.add_argument('--model_path', type=str, default='')
 
 
     # Use parse_known_args to accept arbitrary arguments
