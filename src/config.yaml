@@ -10,8 +10,8 @@ num_lstm_layers: 2
 conv1_out_channels: 64
 conv2_out_channels: 128
 dataset_subset: 'all'
-target_label: 'category'
-num_classes: 5
+target_label: 'class'
+num_classes: 2
 overlap: 0.75
 val_split: 0.10
 max_epochs: 500

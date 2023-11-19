@@ -11,6 +11,7 @@ def load_config():
     with open('config.yaml', 'r') as yaml_file:
         return yaml.safe_load(yaml_file)
 
+
 default_config = load_config()
 
 argparser = argparse.ArgumentParser()
@@ -51,24 +52,27 @@ def merge_config_with_cli_args(config):
     # add learning rate
     parser.add_argument('--learning_rate', type=float, default=1e-3)
     # add reconstruction loss weight
-    parser.add_argument('--reconstruction_loss_weight', type=float, default=1.0)
+    parser.add_argument('--reconstruction_loss_weight',
+                        type=float, default=1.0)
     # add class loss weight
-    parser.add_argument('--classification_loss_weight', type=float, default=1.0)
+    parser.add_argument('--classification_loss_weight',
+                        type=float, default=1.0)
 
     # add dataset subset
     parser.add_argument('--dataset_subset', type=str, default='all')
     # add dataset path
-    parser.add_argument('--dataset_path', type=str, default='data/datasets.pkl')
+    parser.add_argument('--dataset_path', type=str,
+                        default='data/datasets.pkl')
 
     # add target label with some specific choices
-    parser.add_argument('--target_label', type=str, default='category', choices=['category', 'class', 'state'])
+    parser.add_argument('--target_label', type=str,
+                        default='class', choices=['category', 'class', 'state'])
 
     # add number of classes
-    parser.add_argument('--num_classes', type=int, default=5)
+    parser.add_argument('--num_classes', type=int, default=2)
 
     # add model path
     parser.add_argument('--model_path', type=str, default='')
-
 
     # Use parse_known_args to accept arbitrary arguments
     args, unknown_args = parser.parse_known_args()

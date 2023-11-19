@@ -40,19 +40,16 @@ def main():
 
     config = merge_config_with_cli_args(default_config)
 
-
     wandb_logger = WandbLogger(project="USB", log_model="all", config=config)
     # wandb_logger = WandbLogger(project="USB", config=config)
     # wandb_logger.watch(model)
 
-    # wandb.init(project='USB')
+    wandb.init(project='USB', config=config)
 
     # # Update config dictionary with values from wandb.config if available
     # for key in config.keys():
     #     if key in wandb.config:
     #         config[key] = wandb.config[key]
-
-
 
     # seed everything
     pl.seed_everything(config['seed'])
@@ -60,14 +57,16 @@ def main():
     model = Autoencoder(**config)
     summary = ModelSummary(model, max_depth=-1)
 
-
-    early_stopping = EarlyStopping(config['monitor_metric'], patience=config['early_stopping_patience'], verbose=False, mode='min', min_delta=0.0)
-    learning_rate_monitor = LearningRateMonitor(logging_interval='epoch', log_momentum=True)
+    early_stopping = EarlyStopping(
+        config['monitor_metric'], patience=config['early_stopping_patience'], verbose=False, mode='min', min_delta=0.0)
+    learning_rate_monitor = LearningRateMonitor(
+        logging_interval='epoch', log_momentum=True)
 
     # input_monitor = InputMonitor()
 
     checkpoint_callback = ModelCheckpoint(
-        monitor=config['monitor_metric'],  # or another metric such as 'val_accuracy'
+        # or another metric such as 'val_accuracy'
+        monitor=config['monitor_metric'],
         dirpath=config['checkpoint_path'],
         filename='best_model-{epoch:02d}-{val_loss:.2f}',
         save_top_k=1,
@@ -75,7 +74,6 @@ def main():
     )
 
     learning_rate_finder = LearningRateFinder()
-
 
     callbacks = [
         early_stopping,
@@ -119,7 +117,6 @@ def main():
     #         print(key, ":", config[key])
     #     print()
 
-
     if trainer.is_global_zero:
         print(model)
         print(summary)
@@ -140,7 +137,6 @@ def main():
     # model = Autoencoder.load_from_checkpoint(best_model_path)
     model.load_state_dict(torch.load(best_model_path)['state_dict'])
 
-
     if trainer.is_global_zero:
         print("Setting up the dataset")
 
@@ -160,14 +156,16 @@ def main():
     # Determine the process rank using the environment variable
     if trainer.is_global_zero:
         # training a random forest classifier without feature extraction
-        classifier = RandomForestClassifier(max_depth=10, random_state=42, n_jobs=-1)
-        accuracy, report = evaluate_detection(classifier, X_train, y_train, X_test, y_test, target_names)
+        classifier = RandomForestClassifier(
+            max_depth=10, random_state=42, n_jobs=-1)
+        accuracy, report = evaluate_detection(
+            classifier, X_train, y_train, X_test, y_test, target_names)
 
         print("dataset shape: ", X_train.shape, y_train.shape)
 
         # log the results to wandb
-        wandb.log({"identification accuracy (random forest no feature extraction)": accuracy})
-
+        # wandb.log(
+        # {"identification accuracy (random forest no feature extraction)": accuracy})
 
         print()
         print("Without feature extraction")
@@ -176,34 +174,37 @@ def main():
         print(report)
         print()
 
-
     # # training a random forest classifier with feature extraction
     # X_train_encoded = encode_dataset_in_batches(model, torch.tensor(X_train, dtype=torch.float32))
     # X_test_encoded = encode_dataset_in_batches(model, torch.tensor(X_test, dtype=torch.float32))
 
     if trainer.is_global_zero:
         print("Extracting features")
-    X_train_encoded, y_train, X_test_encoded, y_test = extract_features(model, data_module)
+    X_train_encoded, y_train, X_test_encoded, y_test = extract_features(
+        model, data_module)
 
     if trainer.is_global_zero:
         print("Training the classifier")
 
     if trainer.is_global_zero:
-        classifier = RandomForestClassifier(max_depth=10, random_state=42, n_jobs=-1)
+        classifier = RandomForestClassifier(
+            max_depth=10, random_state=42, n_jobs=-1)
 
-        accuracy, report = evaluate_detection(classifier, X_train_encoded, y_train, X_test_encoded, y_test, target_names)
+        accuracy, report = evaluate_detection(
+            classifier, X_train_encoded, y_train, X_test_encoded, y_test, target_names)
 
         # log the results to wandb
-        wandb.log({"identification accuracy (random forest with feature extraction)": accuracy})
+        # wandb.log(
+        #     {"identification accuracy (random forest with feature extraction)": accuracy})
 
         print("With feature extraction")
         print("Classifier: ", classifier.__class__.__name__)
         print(f"Accuracy: {accuracy*100.0:.4f}")
         print(report)
 
-
     # Close wandb run
     wandb.finish()
+
 
 if __name__ == '__main__':
     main()
