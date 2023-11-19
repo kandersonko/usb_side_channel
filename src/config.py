@@ -16,6 +16,8 @@ default_config = load_config()
 argparser = argparse.ArgumentParser()
 
 # parse even unknown arguments
+# python inference.py --model_path=best_models/best_model-epoch=42-val_loss=0.02.ckpt --batch_size=267 --bottleneck_dim=355 --classification_loss_weight=0.2354142206693032 --conv1_out_channels=308 --conv2_out_channels=90 --dropout=0.638829782779092 --num_lstm_layers=6 --reconstruction_loss_weight=0.8200835209023157
+
 
 def merge_config_with_cli_args(config):
     # Create the argument parser
@@ -44,7 +46,7 @@ def merge_config_with_cli_args(config):
     parser.add_argument('--dropout', type=float, default=0.2)
 
     # lstm number of layers
-    parser.add_argument('--num_layers', type=int, default=1)
+    parser.add_argument('--num_lstm_layers', type=int, default=1)
 
     # add learning rate
     parser.add_argument('--learning_rate', type=float, default=1e-3)

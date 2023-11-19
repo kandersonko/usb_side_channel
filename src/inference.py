@@ -32,7 +32,7 @@ def main():
     if config['model_path'] is None:
         raise ValueError("Provide a model path")
 
-    config['batch_size'] = 512
+    # config['batch_size'] = 512
 
 
     pl.seed_everything(config['seed'], workers=True)
@@ -59,6 +59,9 @@ def main():
     best_model_path = config['model_path']
 
     model = Autoencoder(**config)
+    summary = ModelSummary(model, max_depth=-1)
+    print(model)
+    print(summary)
 
     model.load_state_dict(torch.load(best_model_path)['state_dict'])
 

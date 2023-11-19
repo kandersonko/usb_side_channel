@@ -1,31 +1,31 @@
-dataset shape: (535950, 1000) (535950,)
+dataset shape: (476400, 1000) (476400,)
 Without feature extraction
 Classifier: RandomForestClassifier
-Accuracy: 87.33837111670864
+Accuracy: 87.72040302267003
                  precision    recall  f1-score   support
 
-          cable       1.00      1.00      1.00     11989
-    flash_drive       0.78      0.90      0.84     11698
-       keyboard       0.81      0.80      0.81     12049
-microcontroller       0.81      0.70      0.75     11941
-          mouse       0.97      0.97      0.97     11873
+          cable       1.00      1.00      1.00     23909
+    flash_drive       0.79      0.90      0.84     23798
+       keyboard       0.81      0.80      0.81     23973
+microcontroller       0.82      0.72      0.76     23708
+          mouse       0.97      0.97      0.97     23712
 
-       accuracy                           0.87     59550
-      macro avg       0.87      0.87      0.87     59550
-   weighted avg       0.87      0.87      0.87     59550
+       accuracy                           0.88    119100
+      macro avg       0.88      0.88      0.88    119100
+   weighted avg       0.88      0.88      0.88    119100
 
 With feature extraction
 Classifier: RandomForestClassifier
-Accuracy: 97.50293870696893
+Accuracy: 96.19143576826197
                  precision    recall  f1-score   support
 
-          cable       1.00      1.00      1.00     11989
-    flash_drive       0.95      0.96      0.96     11698
-       keyboard       0.96      0.95      0.96     12049
-microcontroller       0.97      0.96      0.96     11941
-          mouse       1.00      1.00      1.00     11873
+          cable       1.00      1.00      1.00     23909
+    flash_drive       0.94      0.95      0.94     23798
+       keyboard       0.94      0.93      0.93     23973
+microcontroller       0.94      0.93      0.94     23708
+          mouse       0.99      1.00      1.00     23712
 
-       accuracy                           0.98     59550
-      macro avg       0.97      0.98      0.97     59550
-   weighted avg       0.98      0.98      0.98     59550
+       accuracy                           0.96    119100
+      macro avg       0.96      0.96      0.96    119100
+   weighted avg       0.96      0.96      0.96    119100
 
