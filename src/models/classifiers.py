@@ -10,10 +10,9 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 import lightning.pytorch as pl
 
-from einops.layers.torch import Rearrange
-
 from config import default_config as config
 
+from models.autoencoders import CNNLSTMEncoder
 
 # Create a LSTM classifier
 class LSTMClassifier(pl.LightningModule):
@@ -40,9 +39,12 @@ class LSTMClassifier(pl.LightningModule):
         num_layers = num_lstm_layers
         self.num_layers = num_lstm_layers
         self.batch_size = batch_size
-        self.lstm = nn.LSTM(input_size=input_size, hidden_size=hidden_size,
-                            num_layers=num_layers, batch_first=True)
-        self.fc = nn.Linear(hidden_size, num_classes)
+        # self.lstm = nn.LSTM(input_size=input_size, hidden_size=hidden_size,
+                            # num_layers=num_layers, batch_first=True)
+        # use the CNNLSTMEncoder
+        self.encoder = CNNLSTMEncoder(input_size=input_size, hidden_size=hidden_size, num_layers=num_lstm_layers, dropout=dropout, sequence_length=sequence_length, num_features=1, **kwargs)
+
+        self.fc = nn.Linear(bottleneck_dim, num_classes)
         # self.dropout = nn.Dropout(dropout)
         self.accuracy = Accuracy(task='multiclass', num_classes=num_classes)
 
@@ -52,43 +54,35 @@ class LSTMClassifier(pl.LightningModule):
         self.save_hyperparameters()
 
     def forward(self, x):
-        x = x.unsqueeze(1)
-        # Set initial hidden and cell states
-        # make sure to initialize them on the same device as the model
-        h0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size, device=self.device)
-        c0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size, device=self.device)
-
-        # Forward propagate LSTM
-        out, _ = self.lstm(x, (h0, c0))
-        # out = self.dropout(out)
-        # Decode the hidden state of the last time step
-        out = self.fc(out[:, -1, :])
+        # x = x.unsqueeze(1)
+        x = self.encoder(x)
+        x = self.fc(x)
         x = x.squeeze(1)
-        return out
+        return x
 
 
     def training_step(self, batch, batch_idx):
         x, y = batch
         y_hat = self(x)
         loss = F.cross_entropy(y_hat, y)
-        self.log('train_loss', loss)
-        self.log('train_acc', self.accuracy(y_hat, y))
+        self.log('train_loss', loss, sync_dist=True, prog_bar=True)
+        self.log('train_acc', self.accuracy(y_hat, y), sync_dist=True, prog_bar=True)
         return loss
 
     def validation_step(self, batch, batch_idx):
         x, y = batch
         y_hat = self(x)
         loss = F.cross_entropy(y_hat, y)
-        self.log('val_loss', loss)
-        self.log('val_acc', self.accuracy(y_hat, y))
+        self.log('val_loss', loss, sync_dist=True, prog_bar=True)
+        self.log('val_acc', self.accuracy(y_hat, y), sync_dist=True, prog_bar=True)
         return loss
 
     def test_step(self, batch, batch_idx):
         x, y = batch
         y_hat = self(x)
         loss = F.cross_entropy(y_hat, y)
-        self.log('test_loss', loss)
-        self.log('test_acc', self.accuracy(y_hat, y))
+        self.log('test_loss', loss, sync_dist=True, prog_bar=True)
+        self.log('test_acc', self.accuracy(y_hat, y), sync_dist=True, prog_bar=True)
         return loss
 
 

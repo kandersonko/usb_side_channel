@@ -12,11 +12,15 @@ from torchmetrics import Accuracy
 
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 
+from torch.utils.data import WeightedRandomSampler
+
 import lightning.pytorch as pl
 
 from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint, LearningRateMonitor
 from lightning.pytorch.callbacks import LearningRateFinder
 from lightning.pytorch.utilities.model_summary import ModelSummary
+
+from lightning.pytorch.loggers import TensorBoardLogger
 
 from config import default_config as config
 
@@ -30,10 +34,13 @@ from imblearn.over_sampling import SMOTE
 from models.classifiers import LSTMClassifier
 from config import default_config, merge_config_with_cli_args
 
+from dataset import compute_class_weights
+
 from sklearn.ensemble import RandomForestClassifier
 
 
 def make_plots(config, classifier, X_train, y_train, X_test, y_test, target_names, method, dataset='features'):
+    pl.seed_everything(config['seed'])
     task = config['task']
     model = config['classifier']
 
@@ -72,7 +79,11 @@ def make_plots(config, classifier, X_train, y_train, X_test, y_test, target_name
         # move the data to the GPU
 
         config['sequence_length'] = X_train.shape[1]
-        classifier = LSTMClassifier(**config)
+        if config['use_class_weights']:
+            class_weights = compute_class_weights(y_train)
+            classifier = LSTMClassifier(**config, class_weights=class_weights)
+        else:
+            classifier = LSTMClassifier(**config)
         print(classifier)
 
         X_train = torch.tensor(X_train, dtype=torch.float32)
@@ -99,8 +110,14 @@ def make_plots(config, classifier, X_train, y_train, X_test, y_test, target_name
         print("val_dataset shape: ", len(val_dataset))
         print("test_dataset shape: ", len(test_dataset))
 
+        class_counts = torch.bincount(y_train)
+        class_weights = 1. / class_counts
+        samples_weights = class_weights[y_train]
 
-        train_dataloader = DataLoader(train_dataset, batch_size=config['batch_size'], shuffle=True, num_workers=config['num_workers'])
+        # Create the sampler
+        sampler = WeightedRandomSampler(samples_weights, len(samples_weights))
+
+        train_dataloader = DataLoader(train_dataset, batch_size=config['batch_size'], shuffle=False, num_workers=config['num_workers'], sampler=sampler)
         val_dataloader = DataLoader(val_dataset, batch_size=config['batch_size'], shuffle=False, num_workers=config['num_workers'])
         test_dataloader = DataLoader(test_dataset, batch_size=config['batch_size'], shuffle=False, num_workers=config['num_workers'])
 
@@ -119,6 +136,7 @@ def make_plots(config, classifier, X_train, y_train, X_test, y_test, target_name
         torch.set_float32_matmul_precision('medium')
         trainer = pl.Trainer(
             # accumulate_grad_batches=config['ACCUMULATE_GRAD_BATCHES'],
+            log_every_n_steps=4,
             num_sanity_val_steps=0,
             max_epochs=config['max_epochs'],
             min_epochs=config['min_epochs'],
@@ -126,6 +144,7 @@ def make_plots(config, classifier, X_train, y_train, X_test, y_test, target_name
             devices=-1,
             strategy='ddp',
             # logger=wandb_logger,
+            logger=TensorBoardLogger("lightning_logs", name="lstm"),
             callbacks=callbacks,
             precision="32-true",
             # precision="16-mixed",
@@ -136,7 +155,7 @@ def make_plots(config, classifier, X_train, y_train, X_test, y_test, target_name
         trainer.fit(classifier, train_dataloader, val_dataloader)
 
         # save the model
-        torch.save(classifier.state_dict(), f"results/{model}-{task}-{method}-{dataset}-model.pth")
+        # torch.save(classifier.state_dict(), f"results/{model}-{task}-{method}-{dataset}-model.pth")
 
         # get the predictions list
         # y_proba = trainer.predict(classifier, test_dataloader)
@@ -220,7 +239,7 @@ def main():
 
     config = merge_config_with_cli_args(default_config)
 
-    pl.seed_everything(config['seed'], workers=True)
+    pl.seed_everything(config['seed'])
 
     # if config['features'] is None:
     #     raise ValueError("Provide a model path")
