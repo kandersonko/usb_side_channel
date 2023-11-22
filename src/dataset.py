@@ -20,6 +20,82 @@ from config import default_config as config
 from torch.utils.data import DataLoader
 from torch.nn import DataParallel
 
+def segment_dataset(features, labels, window_size, overlap):
+    """
+    Segments a dataset into windows of size window_size with overlap overlap
+    :param features: The features to segment
+    :param labels: The labels to segment
+    :param window_size: The size of the window to apply to each signal
+    :param overlap: The percentage of overlap between windows within the same signal
+    :return: A tuple containing the segmented features and labels
+    """
+    assert 0 <= overlap < 1, "Overlap percent must be between 0 and 1"
+
+
+    step_size = window_size - int(window_size * overlap)
+    windows = []
+    window_labels = []
+    for feature, label in zip(features, labels):
+        # Ensure each signal starts a new segmentation
+        start = 0
+        feature_length = len(feature)
+        while start + window_size <= feature_length:
+            end = start + window_size
+            windows.append(feature[start:end])
+            window_labels.append(label)
+            start += step_size
+
+    return windows, window_labels
+
+def setup_dataset(dataset_path, sequence_length, val_split, dataset_subset, target_label, overlap, **kwargs):
+    data = load_data(dataset_path)
+
+    data['class'] = 'normal'
+    data['class'] = data['class'].mask(data['brand'] == 'OMG', 'anomaly')
+    data['class'] = data['class'].mask(data['brand'] == 'teensyduino', 'anomaly')
+
+    # make the length of the data equal to 100k
+    data['data'] = data['data'].map(lambda x: x[:len(x)-4])
+
+    if dataset_subset == 'idle':
+        data = data[data['state'] != 'operations']
+
+    signals = np.stack(data.data.values)
+    labels = data[target_label].to_numpy()
+
+    # balance the dataset
+    sampler = SMOTE()
+    signals, labels = sampler.fit_resample(signals, labels)
+
+    label_encoder = LabelEncoder()
+
+    labels = label_encoder.fit_transform(labels)
+
+
+    # Split the dataset
+    val_size = int(len(signals) * val_split)
+    train_size = len(signals) - val_size
+
+    # apply standard scaer to the training data using the train_size
+    scaler = StandardScaler()
+    train_signals = scaler.fit_transform(signals[:train_size].reshape(-1, 1)).reshape(signals[:train_size].shape)
+    # apply the standard scaler transform on the rest of the data using the train_size
+
+    val_signals = scaler.transform(signals[train_size:].reshape(-1, 1)).reshape(signals[train_size:].shape)
+
+    signals = np.concatenate([train_signals, val_signals]).reshape(signals.shape)
+
+
+    # segment the dataset
+    windows, window_labels = segment_dataset(signals, labels, sequence_length, overlap)
+    # concat them to create the dataset
+    signals = np.stack(windows)
+    labels = np.stack(window_labels)
+
+    return signals, labels, label_encoder.classes_
+
+
+
 def encode_dataset_in_batches(model, dataset, num_workers=4, use_cuda=True):
     num_workers = cpu_count() // 2
     batch_size = 512
@@ -43,7 +119,7 @@ def encode_dataset_in_batches(model, dataset, num_workers=4, use_cuda=True):
     return torch.cat(encoded_batches).numpy()
 
 
-def extract_features(model, data_module):
+def extract_features(model, data_module=None, train_dataloader=None, val_dataloader=None):
     """
     Extracts the segments and labels from the training and validation datasets
     """
@@ -55,11 +131,18 @@ def extract_features(model, data_module):
     print("num_workers: ", num_workers)
     print("batch_size: ", batch_size)
 
+    if data_module:
+        train_dataloader = data_module.train_dataloader(num_workers=num_workers, batch_size=batch_size)
+        val_dataloader = data_module.val_dataloader(num_workers=num_workers, batch_size=batch_size)
+    else:
+        assert train_dataloader is not None and val_dataloader is not None, "Provide either a data module or the train and validation dataloaders"
+
+
     if torch.cuda.is_available():
         model = DataParallel(model).cuda()
 
     with torch.no_grad():
-        for batch in tqdm(data_module.train_dataloader(num_workers=num_workers, batch_size=batch_size)):
+        for batch in tqdm(iter(train_dataloader)):
             segments, batch_labels = batch
             if torch.cuda.is_available():
                 segments = segments.cuda(non_blocking=True)
@@ -68,7 +151,7 @@ def extract_features(model, data_module):
             train_segments.append(segments_encoded)
             train_labels.append(batch_labels)
 
-        for batch in tqdm(data_module.val_dataloader(num_workers=num_workers, batch_size=batch_size)):
+        for batch in tqdm(iter(val_dataloader)):
             segments, batch_labels = batch
             if torch.cuda.is_available():
                 segments = segments.cuda(non_blocking=True)

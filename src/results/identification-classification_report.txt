@@ -1,0 +1,11 @@
+                 precision    recall  f1-score   support
+
+          cable       1.00      1.00      1.00     11989
+    flash_drive       0.80      0.80      0.80     11698
+       keyboard       0.90      0.80      0.85     12049
+microcontroller       0.74      0.82      0.78     11941
+          mouse       0.88      0.88      0.88     11873
+
+       accuracy                           0.86     59550
+      macro avg       0.86      0.86      0.86     59550
+   weighted avg       0.87      0.86      0.86     59550

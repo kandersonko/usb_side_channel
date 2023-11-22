@@ -28,7 +28,7 @@ def merge_config_with_cli_args(config):
 
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--batch_size', type=int, default=512)
-    parser.add_argument('--val_split', type=float, default=0.2)
+    parser.add_argument('--val_split', type=float, default=0.1)
     parser.add_argument('--bottleneck_dim', type=int, default=32)
     parser.add_argument('--max_epochs', type=int, default=100)
     parser.add_argument('--min_epochs', type=int, default=10)
