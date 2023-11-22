@@ -121,38 +121,57 @@ def make_plots(config, classifier, X_train, y_train, X_test, y_test, target_name
         val_dataloader = DataLoader(val_dataset, batch_size=config['batch_size'], shuffle=False, num_workers=config['num_workers'])
         test_dataloader = DataLoader(test_dataset, batch_size=config['batch_size'], shuffle=False, num_workers=config['num_workers'])
 
-        early_stopping = EarlyStopping(
-            config['monitor_metric'], patience=config['early_stopping_patience'], verbose=False, mode='min', min_delta=0.0)
-        learning_rate_monitor = LearningRateMonitor(
-            logging_interval='epoch', log_momentum=True)
-        learning_rate_finder = LearningRateFinder()
+        if config['model_path'] is not None and config['model_path'] != '':
+            classifier.load_state_dict(torch.load(config['model_path'])['state_dict'])
+        else:
 
-        callbacks = [
-            early_stopping,
-            learning_rate_monitor,
-            # checkpoint_callback,
-            learning_rate_finder,
-        ]
-        torch.set_float32_matmul_precision('medium')
-        trainer = pl.Trainer(
-            # accumulate_grad_batches=config['ACCUMULATE_GRAD_BATCHES'],
-            log_every_n_steps=4,
-            num_sanity_val_steps=0,
-            max_epochs=config['max_epochs'],
-            min_epochs=config['min_epochs'],
-            accelerator="gpu",
-            devices=-1,
-            strategy='ddp',
-            # logger=wandb_logger,
-            logger=TensorBoardLogger("lightning_logs", name="lstm"),
-            callbacks=callbacks,
-            precision="32-true",
-            # precision="16-mixed",
-            # precision=32,
-            # default_root_dir=config['CHECKPOINT_PATH'],
-        )
+            early_stopping = EarlyStopping(
+                config['monitor_metric'], patience=config['early_stopping_patience'], verbose=False, mode='min', min_delta=0.0)
+            learning_rate_monitor = LearningRateMonitor(
+                logging_interval='epoch', log_momentum=True)
+            learning_rate_finder = LearningRateFinder()
 
-        trainer.fit(classifier, train_dataloader, val_dataloader)
+            checkpoint_callback = ModelCheckpoint(
+                # or another metric such as 'val_accuracy'
+                monitor=config['monitor_metric'],
+                dirpath='./checkpoints',
+                filename='classifier-'+ task + '-{epoch:02d}-{val_loss:.2f}',
+                save_top_k=1,
+                mode='min',  # 'min' for loss and 'max' for accuracy
+            )
+
+            callbacks = [
+                early_stopping,
+                learning_rate_monitor,
+                checkpoint_callback,
+                learning_rate_finder,
+            ]
+            torch.set_float32_matmul_precision('medium')
+            trainer = pl.Trainer(
+                # accumulate_grad_batches=config['ACCUMULATE_GRAD_BATCHES'],
+                log_every_n_steps=4,
+                num_sanity_val_steps=0,
+                max_epochs=config['max_epochs'],
+                min_epochs=config['min_epochs'],
+                accelerator="gpu",
+                devices=-1,
+                strategy='ddp',
+                # logger=wandb_logger,
+                logger=TensorBoardLogger("lightning_logs", name="lstm"),
+                callbacks=callbacks,
+                precision="32-true",
+                # precision="16-mixed",
+                # precision=32,
+                # default_root_dir=config['CHECKPOINT_PATH'],
+            )
+
+            trainer.fit(classifier, train_dataloader, val_dataloader)
+
+
+            best_model_path = checkpoint_callback.best_model_path
+            classifier = Autoencoder.load_from_checkpoint(best_model_path)
+            # classifier.load_state_dict(torch.load(best_model_path)['state_dict'])
+
 
         # save the model
         # torch.save(classifier.state_dict(), f"results/{model}-{task}-{method}-{dataset}-model.pth")

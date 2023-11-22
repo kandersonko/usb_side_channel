@@ -30,6 +30,8 @@ class LSTMClassifier(pl.LightningModule):
             **kwargs,
     ):
         super().__init__()
+        self.save_hyperparameters()
+
         self.monitor = monitor_metric
         self.learning_rate_patience = learning_rate_patience
         hidden_size = bottleneck_dim
@@ -51,7 +53,6 @@ class LSTMClassifier(pl.LightningModule):
         self.example_input_array = torch.rand(self.batch_size, sequence_length)
 
 
-        self.save_hyperparameters()
 
     def forward(self, x):
         # x = x.unsqueeze(1)

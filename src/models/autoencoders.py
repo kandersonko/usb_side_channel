@@ -35,6 +35,7 @@ class Autoencoder(pl.LightningModule):
             **kwargs,
     ):
         super().__init__()
+        self.save_hyperparameters()
 
         self.learning_rate = learning_rate
         self.learning_rate_patience = learning_rate_patience

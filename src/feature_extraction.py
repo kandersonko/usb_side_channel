@@ -46,19 +46,6 @@ def main():
     plot_data = []
 
 
-    print("Setting up the model")
-
-    # best_model_path = checkpoint_callback.best_model_path
-    # best_model_path = 'best_models/best_model-epoch=16-val_loss=0.36.ckpt'
-    # best_model_path = 'best_models/best_model-epoch=49-val_loss=0.11.ckpt'
-    best_model_path = config['model_path']
-
-    model = Autoencoder(**config)
-    summary = ModelSummary(model, max_depth=-1)
-    print(model)
-    print(summary)
-
-    model.load_state_dict(torch.load(best_model_path)['state_dict'])
 
 
     if task == "identification":
@@ -96,6 +83,26 @@ def main():
     data_module = SegmentedSignalDataModule(**config)
     data_module.setup()
     X_train, y_train, X_test, y_test = extract_segments(data_module)
+
+    print("Setting up the model")
+
+    # best_model_path = checkpoint_callback.best_model_path
+    # best_model_path = 'best_models/best_model-epoch=16-val_loss=0.36.ckpt'
+    # best_model_path = 'best_models/best_model-epoch=49-val_loss=0.11.ckpt'
+    best_model_path = config['model_path']
+
+    model = None
+    if config['use_class_weights']:
+        model = Autoencoder(**config, class_weights=data_module.class_weights)
+    else:
+        model = Autoencoder(**config)
+    # model = Autoencoder.load_from_checkpoint(best_model_path)
+    summary = ModelSummary(model, max_depth=-1)
+    print(model)
+    print(summary)
+
+    model.load_state_dict(torch.load(best_model_path)['state_dict'])
+
 
     end_time = time.time()
     duration = end_time - start_time
