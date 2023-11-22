@@ -20,6 +20,24 @@ from config import default_config as config
 from torch.utils.data import DataLoader
 from torch.nn import DataParallel
 
+def compute_class_weights(labels):
+    """
+    Compute class weights given a list/array of class labels.
+
+    :param labels: An array-like object containing class labels.
+    :return: A tensor of class weights.
+    """
+    # Count the number of instances of each class
+    class_counts = torch.bincount(torch.tensor(labels, dtype=torch.long))
+
+    # Compute weights (inverse frequency)
+    weights = 1. / class_counts.float()
+
+    # Normalize weights (this step is optional)
+    weights = weights / weights.sum() * len(class_counts)
+
+    return weights
+
 def segment_dataset(features, labels, window_size, overlap):
     """
     Segments a dataset into windows of size window_size with overlap overlap
@@ -264,6 +282,7 @@ class SegmentedSignalDataModule(pl.LightningDataModule):
                  target_label,
                  num_workers,
                  overlap,
+                 use_class_weights=False,
                  **kwargs,
                  ):
         super().__init__()
@@ -281,6 +300,9 @@ class SegmentedSignalDataModule(pl.LightningDataModule):
         self.overlap = overlap
 
         self.target_label = target_label
+
+        self.class_weights = None
+        self.use_class_weights = use_class_weights
 
         # take 90% of the cpus
         # self.num_workers = int(cpu_count() * 0.9)
@@ -310,14 +332,20 @@ class SegmentedSignalDataModule(pl.LightningDataModule):
         labels = data[self.target_label].to_numpy()
 
         # balance the dataset
-        smote = SMOTE()
-        signals, labels = smote.fit_resample(signals, labels)
+
+        if not self.use_class_weights:
+            smote = SMOTE()
+            signals, labels = smote.fit_resample(signals, labels)
+
+        # compute the class weights
 
         self.label_encoder = LabelEncoder()
 
         self.signals = signals
         self.labels = self.label_encoder.fit_transform(labels)
 
+        if self.use_class_weights:
+            self.class_weights = compute_class_weights(self.labels)
 
         # Split the dataset
         val_size = int(len(self.signals) * self.val_split)

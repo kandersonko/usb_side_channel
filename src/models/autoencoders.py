@@ -31,6 +31,7 @@ class Autoencoder(pl.LightningModule):
             num_lstm_layers,
             dropout,
             monitor_metric,
+            class_weights=None,
             **kwargs,
     ):
         super().__init__()
@@ -46,6 +47,7 @@ class Autoencoder(pl.LightningModule):
         self.reconstruction_loss_weight = reconstruction_loss_weight
         self.classification_loss_weight = classification_loss_weight
 
+        self.class_weights = class_weights
 
         # conv1d expects (batch, channels, seq_len)
         self.example_input_array = torch.rand(self.batch_size, sequence_length)
@@ -89,7 +91,10 @@ class Autoencoder(pl.LightningModule):
 
         # Loss Functions
         self.reconstruction_loss_fn = nn.MSELoss()
-        self.classification_loss_fn = nn.CrossEntropyLoss()
+        if self.class_weights is None:
+            self.classification_loss_fn = nn.CrossEntropyLoss()
+        else:
+            self.classification_loss_fn = nn.CrossEntropyLoss(weight=self.class_weights)
 
     def forward(self, x):
         # import pdb; pdb.set_trace()

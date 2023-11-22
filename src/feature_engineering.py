@@ -23,9 +23,9 @@ from tsfresh.convenience.bindings import dask_feature_extraction_on_chunk
 
 from tsfresh.utilities.dataframe_functions import impute
 
+import dask
 from dask.distributed import Client
 from dask_jobqueue import SLURMCluster
-
 
 import dask.dataframe as dd
 from dask import optimize, compute
@@ -41,13 +41,16 @@ from sklearn.metrics import accuracy_score, classification_report
 
 def main(dataset_path):
 
+    # dask.config.set({'distributed.scheduler.allowed-failures': 50})
+    # dask.config.set({'distributed.scheduler.worker-ttl': None})
+
     # create a dask cluster
     cluster = SLURMCluster(cores=16,
-                        #processes=2,
-                        memory="32GB",
+                        processes=4,
+                        memory="128GB",
                         walltime="02:00:00",
                         # interface='ib0',
-                        #queue="reg"
+                           #queue="reg",
                         )
     print(cluster)
 
@@ -59,6 +62,7 @@ def main(dataset_path):
     client = Client(cluster)
 
     cluster.scale(100)
+
     # load the dataset
     data_path = Path(dataset_path)
     data = dd.from_pandas(load_data(dataset_path), npartitions=10)
@@ -71,10 +75,16 @@ def main(dataset_path):
     data = data.persist()
     data['id'] = data.index
     y_category = data['category']
+    y_category = y_category.compute()
     y_class = data['class']
+    y_class = y_class.compute()
     data = data.explode('data')
     data['time'] = data.groupby('id').cumcount()
     data = data.rename(columns={'data': 'value'})
+
+    print(client)
+    print("y category shape: ", y_category.shape)
+    print("y class shape: ", y_class.shape)
     print(data.head())
 
     data['value'] = data['value'].astype(np.float32)
@@ -93,6 +103,8 @@ def main(dataset_path):
     start_time = time.time()
 
     distributor = ClusterDaskDistributor(cluster)
+
+    print("Extracting features")
 
     features = extract_features(
         X_features,
@@ -117,8 +129,10 @@ def main(dataset_path):
 
     # select relevant features
     features.fillna(0, inplace=True)
-    features_filtered = select_features(features, y)
-    features_filtered = features_filtered.compute()
+
+    # transform the labels to numpy arrays
+    features_filtered = select_features(features, y_category)
+    # features_filtered = features_filtered.compute()
 
     end_time = time.time()
     duration = end_time - start_time
@@ -133,7 +147,7 @@ def main(dataset_path):
     # save the features with the labels concatenated
     features_filtered['class'] = y_class
     features_filtered['category'] = y_category
-    features_filtered.to_csv('data/features_anova.csv')
+    features_filtered.to_csv('data/features_tsfresh.csv')
 
 
 if __name__ == '__main__':

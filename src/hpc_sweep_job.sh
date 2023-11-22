@@ -2,8 +2,8 @@
 #SBATCH --job-name=param-sweep
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH -p gpu-long
-#SBATCH --gres=gpu:1080ti:2
+#SBATCH -p gpu-volatile
+#SBATCH --gres=gpu:a100:2
 #SBATCH --time=12:00:00
 #SBATCH --array=1
 #SBATCH --output=jobs/sweep_%A_%a.stdout
@@ -35,6 +35,6 @@ unset LD_LIBRARY_PATH
 # Assign each task to a specific GPU
 export CUDA_VISIBLE_DEVICES=$SLURM_ARRAY_TASK_ID
 
-sweep_id=2du09tko
+sweep_id=jpjydyli
 
-srun --exclusive --gres=gpu:1080ti:2 -l wandb agent koffi-anderson/USB/${sweep_id}
+srun --exclusive --gres=gpu:a100:2 -l wandb agent koffi-anderson/usb_side_channel/${sweep_id}

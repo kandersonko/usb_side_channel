@@ -38,13 +38,14 @@ def main():
     # make sure args is not empty
     # config = {**default_config, **vars(args)} if vars(args) else default_config
 
+
     config = merge_config_with_cli_args(default_config)
 
-    wandb_logger = WandbLogger(project="USB", log_model="all", config=config)
-    # wandb_logger = WandbLogger(project="USB", config=config)
+    wandb_logger = WandbLogger(project="usb_side_channel", log_model="all", config=config)
+    # wandb_logger = WandbLogger(project="usb_side_channel", config=config)
     # wandb_logger.watch(model)
 
-    wandb.init(project='USB', config=config)
+    # wandb.init(project='usb_side_channel', config=config)
 
     # # Update config dictionary with values from wandb.config if available
     # for key in config.keys():
@@ -54,8 +55,20 @@ def main():
     # seed everything
     pl.seed_everything(config['seed'])
 
-    model = Autoencoder(**config)
+    data_module = SegmentedSignalDataModule(**config)
+    data_module.setup()
+
+    class_weights = data_module.class_weights
+
+
+    model = None
+    if config['use_class_weights']:
+        model = Autoencoder(**config, class_weights=class_weights)
+    else:
+        model = Autoencoder(**config)
     summary = ModelSummary(model, max_depth=-1)
+
+    print("class weights: ", class_weights)
 
     early_stopping = EarlyStopping(
         config['monitor_metric'], patience=config['early_stopping_patience'], verbose=False, mode='min', min_delta=0.0)
@@ -83,7 +96,6 @@ def main():
     ]
 
     # data_module = USBDataModule(batch_size=config['BATCH_SIZE'], val_split=config['VAL_SPLIT'])
-    data_module = SegmentedSignalDataModule(**config)
 
     torch.set_float32_matmul_precision('medium')
 

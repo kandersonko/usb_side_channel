@@ -28,6 +28,6 @@ which python
 export CUDA_VISIBLE_DEVICES=$SLURM_ARRAY_TASK_ID
 
 sweep_id=b9jqdanv
-# wandb agent koffi-anderson/USB/${sweep_id}
+# wandb agent koffi-anderson/usb_side_channel/${sweep_id}
 
-srun --exclusive --gres=gpu:rtxa6000:1 -l wandb agent koffi-anderson/USB/${sweep_id}
+srun --exclusive --gres=gpu:rtxa6000:1 -l wandb agent koffi-anderson/usb_side_channel/${sweep_id}

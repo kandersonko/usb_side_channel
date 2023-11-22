@@ -92,6 +92,28 @@ def main():
     duration = end_time - start_time
     plot_data.append({'name': 'dataset', 'task': 'setup', 'dataset': 'all', 'duration': duration})
 
+    # extract semgnets
+    data_module = SegmentedSignalDataModule(**config)
+    data_module.setup()
+    X_train, y_train, X_test, y_test = extract_segments(data_module)
+
+    end_time = time.time()
+    duration = end_time - start_time
+    plot_data.append({"name": "dataset", "task": "extract segments", 'dataset': 'all', "duration": duration})
+
+    raw_target_names = data_module.target_names
+
+    # save the segments and labels dataset to disk to the data/ folder
+    # using numpy
+    target_label = config['target_label']
+    np.save(f"data/X_{target_label}_train_raw.npy", X_train)
+    np.save(f"data/y_{target_label}_train_raw.npy", y_train)
+    np.save(f"data/X_{target_label}_test_raw.npy", X_test)
+    np.save(f"data/y_{target_label}_test_raw.npy", y_test)
+    # save the target names
+    np.save(f"data/{target_label}_target_names_raw.npy", raw_target_names)
+
+
 
     print("Extracting features")
     start_time = time.time()
@@ -112,10 +134,10 @@ def main():
     print("Saving the features")
     target_label = config['target_label']
     np.save(f"data/X_{target_label}_train_encoded.npy", X_train_encoded)
-    np.save(f"data/y_{target_label}_train.npy", y_train)
+    np.save(f"data/y_{target_label}_train_encoded.npy", y_train)
     np.save(f"data/X_{target_label}_test_encoded.npy", X_test_encoded)
-    np.save(f"data/y_{target_label}_test.npy", y_test)
-    np.save(f"data/{target_label}_target_names.npy", target_names)
+    np.save(f"data/y_{target_label}_test_encoded.npy", y_test)
+    np.save(f"data/{target_label}_target_names_encoded.npy", target_names)
 
 
 

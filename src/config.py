@@ -58,6 +58,8 @@ def merge_config_with_cli_args(config):
     parser.add_argument('--classification_loss_weight',
                         type=float, default=1.0)
 
+    # add no_class_weights boolean flag with default False
+    parser.add_argument('--use_class_weights', action='store_true', default=False)
     # add dataset subset
     parser.add_argument('--dataset_subset', type=str, default='all')
     # add dataset path
@@ -66,10 +68,10 @@ def merge_config_with_cli_args(config):
 
     # add target label with some specific choices
     parser.add_argument('--target_label', type=str,
-                        default='class', choices=['category', 'class', 'state'])
+                        default='category', choices=['category', 'class', 'state'])
 
     # add number of classes
-    parser.add_argument('--num_classes', type=int, default=2)
+    parser.add_argument('--num_classes', type=int, default=5)
 
     # add model path
     parser.add_argument('--model_path', type=str, default='')

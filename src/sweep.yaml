@@ -1,13 +1,20 @@
-program: train.py
 method: bayes
 metric:
   goal: minimize
   name: val_loss
 parameters:
-  num_lstm_layers:
+  batch_size:
     distribution: int_uniform
-    max: 20
-    min: 1
+    max: 512
+    min: 128
+  bottleneck_dim:
+    distribution: int_uniform
+    max: 512
+    min: 16
+  classification_loss_weight:
+    distribution: uniform
+    max: 2
+    min: 0.01
   conv1_out_channels:
     distribution: int_uniform
     max: 512
@@ -16,32 +23,44 @@ parameters:
     distribution: int_uniform
     max: 512
     min: 8
-  reconstruction_loss_weight:
-    max: 1.0
-    min: 0.05
-    distribution: uniform
-  classification_loss_weight:
-    max: 1.0
-    min: 0.05
-    distribution: uniform
-  target_label:
-    values:
-      - class
-    distribution: categorical
-  num_classes:
-    values:
-      - 2
-    distribution: categorical
-  bottleneck_dim:
-    max: 512
-    min: 16
-    distribution: int_uniform
-  batch_size:
-    max: 256
-    min: 32
-    distribution: int_uniform
   dropout:
-    max: 0.90
-    min: 0.01
     distribution: uniform
-
+    max: 0.5
+    min: 0.01
+  max_epochs:
+    distribution: categorical
+    values:
+      - 500
+  min_epochs:
+    distribution: categorical
+    values:
+      - 5
+  monitor_metric:
+    distribution: categorical
+    values:
+      - val_loss
+  num_classes:
+    distribution: categorical
+    values:
+      - 5
+  num_lstm_layers:
+    distribution: int_uniform
+    max: 20
+    min: 1
+  reconstruction_loss_weight:
+    distribution: uniform
+    max: 2
+    min: 0.01
+  target_label:
+    distribution: categorical
+    values:
+      - category
+  use_class_weights:
+    distribution: categorical
+    values:
+      - "false"
+  val_split:
+    distribution: categorical
+    values:
+      - 0.2
+program: train.py

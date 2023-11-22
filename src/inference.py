@@ -38,7 +38,8 @@ def main():
     # config['batch_size'] = 512
 
 
-    pl.seed_everything(config['seed'], workers=True)
+    # pl.seed_everything(config['seed'], workers=True)
+    pl.seed_everything(config['seed'])
 
     # plot data
     plot_data = []
@@ -62,6 +63,7 @@ def main():
 
     print("Setting up the model")
 
+
     checkpoint_callback = ModelCheckpoint(
         monitor='val_loss',  # or another metric such as 'val_accuracy'
         dirpath='best_models/',
@@ -75,7 +77,11 @@ def main():
     # best_model_path = 'best_models/best_model-epoch=49-val_loss=0.11.ckpt'
     best_model_path = config['model_path']
 
-    model = Autoencoder(**config)
+    if not config['use_class_weights']:
+        model = Autoencoder(**config)
+    else:
+        class_weights = data_module.class_weights
+        model = Autoencoder(**config, class_weights=class_weights)
     summary = ModelSummary(model, max_depth=-1)
     print(model)
     print(summary)
@@ -100,6 +106,16 @@ def main():
 
 
     output_file_content = ""
+
+    # save the segments and labels dataset to disk to the data/ folder
+    # using numpy
+    target_label = config['target_label']
+    np.save(f"data/X_{target_label}_train_raw.npy", X_train)
+    np.save(f"data/y_{target_label}_train_raw.npy", y_train)
+    np.save(f"data/X_{target_label}_test_raw.npy", X_test)
+    np.save(f"data/y_{target_label}_test_raw.npy", y_test)
+    # save the target names
+    np.save("data/target_names.npy", target_names)
 
 
     # training a random forest classifier without feature extraction
@@ -224,7 +240,8 @@ def main():
     classifier.cpu()
     start_time = time.time()
     sample_test_encoded = model.encoder(torch.tensor(sample_test, dtype=torch.float32, device='cpu'))
-    yhat = classifier(torch.tensor(sample_test_encoded, dtype=torch.float32, device='cpu'))
+    # move to the cpu
+    yhat = classifier(sample_test_encoded)
     end_time = time.time()
     duration = end_time - start_time
     plot_data.append({"name": "autoencoder", "task": "inference", "dataset": "single", "duration": duration})
@@ -248,12 +265,12 @@ def main():
     # save the encoded features and labels dataset to disk to the data/ folder
     # using numpy
 
-    np.save("data/X_train_encoded.npy", X_train_encoded)
-    np.save("data/y_train.npy", y_train)
-    np.save("data/X_test_encoded.npy", X_test_encoded)
-    np.save("data/y_test.npy", y_test)
-    # save the target names
-    np.save("data/target_names.npy", target_names)
+    # np.save("data/X_train_encoded.npy", X_train_encoded)
+    # np.save("data/y_train.npy", y_train)
+    # np.save("data/X_test_encoded.npy", X_test_encoded)
+    # np.save("data/y_test.npy", y_test)
+    # # save the target names
+    # np.save("data/target_names.npy", target_names)
 
 
 

@@ -23,7 +23,9 @@ from config import default_config as config
 from sklearn.metrics import accuracy_score, classification_report, ConfusionMatrixDisplay
 from sklearn.metrics import roc_auc_score, roc_curve, auc
 from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder
 
+from imblearn.over_sampling import SMOTE
 
 from models.classifiers import LSTMClassifier
 from config import default_config, merge_config_with_cli_args
@@ -31,7 +33,7 @@ from config import default_config, merge_config_with_cli_args
 from sklearn.ensemble import RandomForestClassifier
 
 
-def make_plots(config, classifier, X_train, y_train, X_test, y_test, target_names, dataset='raw'):
+def make_plots(config, classifier, X_train, y_train, X_test, y_test, target_names, method, dataset='features'):
     task = config['task']
     model = config['classifier']
 
@@ -53,6 +55,9 @@ def make_plots(config, classifier, X_train, y_train, X_test, y_test, target_name
     print("y_train shape: ", y_train.shape)
     print("X_test shape: ", X_test.shape)
     print("y_test shape: ", y_test.shape)
+
+    # replace _ with space and capitalize the first letter
+    target_names = [target_name.replace("_", " ").capitalize() for target_name in target_names]
 
     yhat = None
     y_proba = None
@@ -131,7 +136,7 @@ def make_plots(config, classifier, X_train, y_train, X_test, y_test, target_name
         trainer.fit(classifier, train_dataloader, val_dataloader)
 
         # save the model
-        torch.save(classifier.state_dict(), f"results/{model}-{task}-{dataset}-model.pth")
+        torch.save(classifier.state_dict(), f"results/{model}-{task}-{method}-{dataset}-model.pth")
 
         # get the predictions list
         # y_proba = trainer.predict(classifier, test_dataloader)
@@ -147,7 +152,7 @@ def make_plots(config, classifier, X_train, y_train, X_test, y_test, target_name
     report = classification_report(y_test, yhat, target_names=target_names)
     print(report)
     # save the classification report
-    with open(f"results/{model}-{task}-{dataset}-classification_report.txt", "w") as f:
+    with open(f"results/{model}-{task}-{method}-{dataset}-classification_report.txt", "w") as f:
         f.write(report)
 
         # #plot the confusion matrix
@@ -166,7 +171,7 @@ def make_plots(config, classifier, X_train, y_train, X_test, y_test, target_name
     plt.xticks(rotation=45, ticks=range(0, len(target_names)), labels=target_names)
     plt.yticks(rotation=45, ticks=range(0, len(target_names)), labels=target_names)
     # save figure
-    plt.savefig(f"results/{model}-{task}-{dataset}-confusion_matrix.png", dpi=300, bbox_inches="tight")
+    plt.savefig(f"results/{model}-{task}-{method}-{dataset}-confusion_matrix.png", dpi=300, bbox_inches="tight")
 
     # Predict probabilities for each class
 
@@ -196,7 +201,7 @@ def make_plots(config, classifier, X_train, y_train, X_test, y_test, target_name
             fpr[i], tpr[i], _ = roc_curve(y_test == i, y_proba[:, i])
             roc_auc[i] = auc(fpr[i], tpr[i])
             # retrieve the target name
-            target_name = target_names[i]
+            target_name = target_names[i].replace("_", " ").capitalize()
             plt.plot(fpr[i], tpr[i], color=colors[i % len(colors)], lw=2,
                     label='ROC curve of class {0} (area = {1:0.2f})'.format(target_name, roc_auc[i]))
 
@@ -209,7 +214,7 @@ def make_plots(config, classifier, X_train, y_train, X_test, y_test, target_name
     plt.title(f'{title} ROC AUC')
     plt.legend(loc="lower right")
     # save figure
-    plt.savefig(f"results/{model}-{task}-{dataset}-roc_auc.png", dpi=300, bbox_inches="tight")
+    plt.savefig(f"results/{model}-{task}-{method}-{dataset}-roc_auc.png", dpi=300, bbox_inches="tight")
 
 def main():
 
@@ -239,6 +244,34 @@ def main():
     # load the features
     print("Loading the features")
 
+    task = config['task']
+
+    if method == 'raw':
+        subset = None
+        if task == 'identification':
+            subset = 'category'
+        elif task == 'detection':
+            subset = 'class'
+        X_train = np.load(f"data/X_{subset}_train_raw.npy")
+        y_train = np.load(f"data/y_{subset}_train_raw.npy")
+        X_test = np.load(f"data/X_{subset}_test_raw.npy")
+        y_test = np.load(f"data/y_{subset}_test_raw.npy")
+
+        target_names = np.load(f"data/{subset}_target_names_raw.npy", allow_pickle=True)
+
+        make_plots(
+            config,
+            classifier,
+            X_train,
+            y_train,
+            X_test,
+            y_test,
+            target_names,
+            dataset='raw',
+            method=method,
+        )
+
+
     if method == 'tsfresh':
         features = pd.read_csv('data/features_tsfresh.csv')
         print("features shape: ", features.shape)
@@ -247,49 +280,31 @@ def main():
 
         # get the features and labels
         y_category = features['category'].values
-        y_category = y_category.astype(np.int64)
         y_class = features['class'].values
-        y_class = y_class.astype(np.int64)
         X = features.drop(['category', 'class'], axis=1).values
-    elif method == 'encoder':
-        X_category_train_encoded = np.load("data/X_category_train_encoded.npy")
-        X_class_train_encoded = np.load("data/X_class_train_encoded.npy")
-        y_category_train = np.load("data/y_category_train.npy")
-        y_class_train = np.load("data/y_class_train.npy")
-        X_category_test_encoded = np.load("data/X_category_test_encoded.npy")
-        X_class_test_encoded = np.load("data/X_class_test_encoded.npy")
-        y_category_test = np.load("data/y_category_test.npy")
-        y_class_test = np.load("data/y_class_test.npy")
-        category_target_names = np.load("data/category_target_names.npy", allow_pickle=True)
-        class_target_names = np.load("data/class_target_names.npy", allow_pickle=True)
 
-        # identification
-        # make_plots(
-        #     config,
-        #     classifier,
-        #     X_train,
-        #     y_category_train,
-        #     X_test,
-        #     y_category_test,
-        #     category_target_names,
-        #     dataset='raw',
-        # )
-        y_train = None
-        y_test = None
-        target_names = None
-        task = config['task']
+        # merge the labels
+        category_label_encoder = LabelEncoder()
+        class_label_encoder = LabelEncoder()
+        y_category = category_label_encoder.fit_transform(y_category)
+        y_class = class_label_encoder.fit_transform(y_class)
+        category_target_names = category_label_encoder.classes_
+        class_target_names = class_label_encoder.classes_
+
+        smote = SMOTE()
         if task == 'identification':
-            X_train = X_category_train_encoded
-            X_test = X_category_test_encoded
-            y_train = y_category_train
-            y_test = y_category_test
             target_names = category_target_names
+            X, y_category = smote.fit_resample(X, y_category)
+
+            # split the dataset into train and test
+            X_train, X_test, y_train, y_test = train_test_split(X, y_category, test_size=config['val_split'], random_state=config['seed'])
+
+
         elif task == 'detection':
-            X_train = X_class_train_encoded
-            X_test = X_class_test_encoded
-            y_train = y_class_train
-            y_test = y_class_test
             target_names = class_target_names
+            X, y_class = smote.fit_resample(X, y_class)
+            # split the dataset into train and test
+            X_train, X_test, y_train, y_test = train_test_split(X, y_class, test_size=config['val_split'], random_state=config['seed'])
 
         make_plots(
             config,
@@ -300,6 +315,33 @@ def main():
             y_test,
             target_names,
             dataset='features',
+            method=method,
+        )
+
+    elif method == 'encoder':
+        subset = None
+        if task == 'identification':
+            subset = 'category'
+        elif task == 'detection':
+            subset = 'class'
+
+        X_train = np.load(f"data/X_{subset}_train_encoded.npy")
+        y_train = np.load(f"data/y_{subset}_train_encoded.npy")
+        X_test = np.load(f"data/X_{subset}_test_encoded.npy")
+        y_test = np.load(f"data/y_{subset}_test_encoded.npy")
+
+        target_names = np.load(f"data/{subset}_target_names_encoded.npy", allow_pickle=True)
+
+        make_plots(
+            config,
+            classifier,
+            X_train,
+            y_train,
+            X_test,
+            y_test,
+            target_names,
+            dataset='features',
+            method=method,
         )
 
 
