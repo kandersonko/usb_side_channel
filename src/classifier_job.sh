@@ -2,9 +2,9 @@
 #SBATCH --job-name=param-sweep
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH -p gpu-long
-#SBATCH --gres=gpu:a6000:2
 #SBATCH --time=02:00:00
+#SBATCH -p gpu-9
+#SBATCH --gres=gpu:a6000:2
 #SBATCH --output=jobs/sweep_%A_%a.stdout
 #SBATCH --error=jobs/sweep_%A_%a.stderr
 

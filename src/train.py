@@ -64,12 +64,13 @@ def main():
     model = None
     if config['use_class_weights']:
         model = Autoencoder(**config, class_weights=class_weights)
+
+        print("class weights: ", class_weights)
     else:
         model = Autoencoder(**config)
     summary = ModelSummary(model, max_depth=-1)
 
     print("class weights: ", class_weights)
-
     early_stopping = EarlyStopping(
         config['monitor_metric'], patience=config['early_stopping_patience'], verbose=False, mode='min', min_delta=0.0)
     learning_rate_monitor = LearningRateMonitor(
@@ -122,13 +123,6 @@ def main():
     # tuner = Tuner(trainer)
     # tuner.lr_find(model, num_training=100, datamodule=data_module, max_lr=0.1)
 
-    # if trainer.is_global_zero:
-    #     # print config
-    #     print("Config:")
-    #     for key in config.keys():
-    #         print(key, ":", config[key])
-    #     print()
-
     if trainer.is_global_zero:
         print(model)
         print(summary)
@@ -146,8 +140,8 @@ def main():
 
     # Load the best model
     best_model_path = checkpoint_callback.best_model_path
-    # model = Autoencoder.load_from_checkpoint(best_model_path)
-    model.load_state_dict(torch.load(best_model_path)['state_dict'])
+    model = Autoencoder.load_from_checkpoint(best_model_path)
+    # model.load_state_dict(torch.load(best_model_path)['state_dict'])
 
     if trainer.is_global_zero:
         print("Setting up the dataset")

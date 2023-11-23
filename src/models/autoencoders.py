@@ -35,6 +35,8 @@ class Autoencoder(pl.LightningModule):
             **kwargs,
     ):
         super().__init__()
+
+        # save all hyperparameters
         self.save_hyperparameters()
 
         self.learning_rate = learning_rate
@@ -368,6 +370,7 @@ class Attention(nn.Module):
         output = torch.sum(attended, dim=1)
         # output shape: (batch_size, hidden_size)
 
+        return output, attention_weights
 
 
 class CNNLSTMEncoder(nn.Module):
@@ -381,6 +384,7 @@ class CNNLSTMEncoder(nn.Module):
                  **kwargs,
                  ):
         super().__init__()
+        self.num_features = num_features
         self.sequence_length = sequence_length
         self.hidden_size = hidden_size
         self.num_layers = num_layers
@@ -388,26 +392,28 @@ class CNNLSTMEncoder(nn.Module):
 
         # Define CNN layers
         self.conv1 = nn.Conv1d(in_channels=num_features, out_channels=conv1_out_channels, kernel_size=3, stride=1, padding=1)
-        # self.bn1 = nn.BatchNorm1d(64)
+        self.bn1 = nn.BatchNorm1d(conv1_out_channels)
         self.conv2 = nn.Conv1d(in_channels=conv1_out_channels, out_channels=conv2_out_channels, kernel_size=3, stride=1, padding=1)
-        # self.bn2 = nn.BatchNorm1d(128)
+        self.bn2 = nn.BatchNorm1d(conv2_out_channels)
         self.pool = nn.MaxPool1d(kernel_size=2, stride=2)
 
         # Calculate the size of the features after the CNN layers
         cnn_output_size = sequence_length // 2 // 2
 
         # Define LSTM layers
-        self.lstm = nn.LSTM(input_size=conv2_out_channels, hidden_size=hidden_size, num_layers=num_layers, batch_first=True)
+        self.lstm = nn.LSTM(input_size=conv2_out_channels, hidden_size=hidden_size, num_layers=num_layers, batch_first=True, bidirectional=True)
 
         # Linear layer to get to the desired hidden_size
-        self.fc = nn.Linear(cnn_output_size * hidden_size, hidden_size)
-        # self.fc = nn.Linear(hidden_size, hidden_size)
+        # self.fc = nn.Linear(cnn_output_size * hidden_size, hidden_size) # for the non-attention layer
+        #
+        # self.fc = nn.Linear(hidden_size, hidden_size) # for the attention layer
+        self.fc = nn.Linear(hidden_size*2, hidden_size) # multiply by 2 because of bidirectional
 
         # add dropout
         self.dropout = nn.Dropout(dropout)
 
         # Attention layer
-        # self.attention = Attention(hidden_size)
+        self.attention = Attention(hidden_size*2) # multiply by 2 because of bidirectional
 
 
     def forward(self, x):
@@ -417,13 +423,13 @@ class CNNLSTMEncoder(nn.Module):
 
         # x = torch.relu(self.bn1(self.conv1(x)))
         x = self.conv1(x)
-        # x = self.bn1(x)
+        x = self.bn1(x)
         x = torch.relu(x)
         x = self.pool(x)
 
         # x = torch.relu(self.bn2(self.conv2(x)))
         x = self.conv2(x)
-        # x = self.bn2(x)
+        x = self.bn2(x)
         x = torch.relu(x)
 
         x = self.pool(x)
@@ -435,7 +441,7 @@ class CNNLSTMEncoder(nn.Module):
         x, _ = self.lstm(x)
 
         # Apply attention
-        # x, attention_weights = self.attention(x)
+        x, attention_weights = self.attention(x)
 
         # Reshape and apply linear layer
         x = x.contiguous().view(x.size(0), -1)
@@ -461,20 +467,24 @@ class CNNLSTMDecoder(nn.Module):
         self.dropout = dropout
 
         # Define LSTM layers
-        self.lstm = nn.LSTM(input_size=hidden_size, hidden_size=hidden_size, num_layers=num_layers, batch_first=True)
+        self.lstm = nn.LSTM(input_size=hidden_size, hidden_size=hidden_size, num_layers=num_layers, batch_first=True, bidirectional=True)
 
         # Define upsampling and CNN layers
         self.upsample1 = nn.Upsample(size=sequence_length // 2)
-        self.conv1 = nn.Conv1d(in_channels=hidden_size, out_channels=conv1_out_channels, kernel_size=3, stride=1, padding=1)
-        # self.bn1 = nn.BatchNorm1d(128)
+        # self.conv1 = nn.Conv1d(in_channels=hidden_size, out_channels=conv1_out_channels, kernel_size=3, stride=1, padding=1)
+        self.conv1 = nn.Conv1d(in_channels=hidden_size*2, out_channels=conv1_out_channels, kernel_size=3, stride=1, padding=1) # multiply by 2 because of bidirectional
+
+        self.bn1 = nn.BatchNorm1d(conv1_out_channels)
 
         self.upsample2 = nn.Upsample(size=sequence_length)
         self.conv2 = nn.Conv1d(in_channels=conv1_out_channels, out_channels=conv2_out_channels, kernel_size=3, stride=1, padding=1)
 
-        # self.bn2 = nn.BatchNorm1d(64)
+        self.bn2 = nn.BatchNorm1d(conv2_out_channels)
+
         self.conv3 = nn.Conv1d(in_channels=conv2_out_channels, out_channels=1, kernel_size=3, stride=1, padding=1)
 
         # Linear layer to reshape the input to the LSTM
+        # self.fc = nn.Linear(hidden_size, hidden_size * (sequence_length // 4))
         self.fc = nn.Linear(hidden_size, hidden_size * (sequence_length // 4))
 
         # add dropout
@@ -504,13 +514,13 @@ class CNNLSTMDecoder(nn.Module):
         x = self.upsample1(x)
         # x = torch.relu(self.bn1(self.conv1(x)))
         x = self.conv1(x)
-        # x = self.bn1(x)
+        x = self.bn1(x)
         x = torch.relu(x)
 
         x = self.upsample2(x)
         # x = torch.relu(self.bn2(self.conv2(x)))
         x = self.conv2(x)
-        # x = self.bn2(x)
+        x = self.bn2(x)
         x = torch.relu(x)
 
 

@@ -122,7 +122,14 @@ def make_plots(config, classifier, X_train, y_train, X_test, y_test, target_name
         test_dataloader = DataLoader(test_dataset, batch_size=config['batch_size'], shuffle=False, num_workers=config['num_workers'])
 
         if config['model_path'] is not None and config['model_path'] != '':
-            classifier.load_state_dict(torch.load(config['model_path'])['state_dict'])
+            classifier = LSTMClassifier.load_from_checkpoint(config['model_path'])
+            # move to gpu
+            classifier.cuda()
+            # move the features to the gpu
+            X_test = X_test.cuda()
+            y_test = y_test.cuda()
+
+            # classifier.load_state_dict(torch.load(config['model_path'])['state_dict'])
         else:
 
             early_stopping = EarlyStopping(
@@ -168,8 +175,8 @@ def make_plots(config, classifier, X_train, y_train, X_test, y_test, target_name
             trainer.fit(classifier, train_dataloader, val_dataloader)
 
 
-            best_model_path = checkpoint_callback.best_model_path
-            classifier = Autoencoder.load_from_checkpoint(best_model_path)
+            # best_model_path = checkpoint_callback.best_model_path
+            # classifier = Autoencoder.load_from_checkpoint(best_model_path)
             # classifier.load_state_dict(torch.load(best_model_path)['state_dict'])
 
 
