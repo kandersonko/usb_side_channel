@@ -92,16 +92,19 @@ def main():
     best_model_path = config['model_path']
 
     model = None
-    if config['use_class_weights']:
-        model = Autoencoder(**config, class_weights=data_module.class_weights)
+    if config['model_path'] is not None and config['model_path'] != '':
+        model = Autoencoder.load_from_checkpoint(best_model_path)
     else:
-        model = Autoencoder(**config)
+        if config['use_class_weights']:
+            model = Autoencoder(**config, class_weights=data_module.class_weights)
+        else:
+            model = Autoencoder(**config)
     # model = Autoencoder.load_from_checkpoint(best_model_path)
     summary = ModelSummary(model, max_depth=-1)
     print(model)
     print(summary)
 
-    model.load_state_dict(torch.load(best_model_path)['state_dict'])
+    # model.load_state_dict(torch.load(best_model_path)['state_dict'])
 
 
     end_time = time.time()

@@ -82,7 +82,7 @@ def main():
         # or another metric such as 'val_accuracy'
         monitor=config['monitor_metric'],
         dirpath=config['checkpoint_path'],
-        filename='best_model-{epoch:02d}-{val_loss:.2f}',
+        filename='best_model-{epoch:02d}-{val_loss:.2f}-{val_acc:.2f}',
         save_top_k=1,
         mode='min',  # 'min' for loss and 'max' for accuracy
     )

@@ -159,6 +159,8 @@ def extract_features(model, data_module=None, train_dataloader=None, val_dataloa
     if torch.cuda.is_available():
         model = DataParallel(model).cuda()
 
+    model.eval()
+
     with torch.no_grad():
         for batch in tqdm(iter(train_dataloader)):
             segments, batch_labels = batch

@@ -1,7 +1,7 @@
               precision    recall  f1-score   support
 
-     Anomaly       0.99      0.98      0.98     27385
-      Normal       0.98      0.99      0.98     27401
+     Anomaly       0.99      0.98      0.98     27370
+      Normal       0.98      0.99      0.98     27416
 
     accuracy                           0.98     54786
    macro avg       0.98      0.98      0.98     54786

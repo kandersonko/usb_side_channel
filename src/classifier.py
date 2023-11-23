@@ -2,6 +2,8 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
+from tqdm import tqdm
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -9,6 +11,8 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader, TensorDataset, random_split
 
 from torchmetrics import Accuracy
+
+from torch.nn import DataParallel
 
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 
@@ -38,6 +42,31 @@ from dataset import compute_class_weights
 
 from sklearn.ensemble import RandomForestClassifier
 
+# Define a function to perform predictions
+def predict(model, dataloader):
+    if torch.cuda.is_available():
+        device = torch.device("cuda:0")
+        model = model.to(device)
+        model = DataParallel(model)
+
+    model.eval()  # Set the model to evaluation mode
+
+    y_proba_list = []
+    with torch.no_grad():
+        for batch in dataloader:
+            # Move data to GPU if necessary
+            X_batch, _ = batch
+            X_batch = X_batch.cuda(non_blocking=True, device=device)
+
+            # Forward pass
+            y_proba_batch = model(X_batch)
+            y_proba_batch = y_proba_batch.cpu().numpy()
+
+            # Accumulate predictions
+            y_proba_list.append(y_proba_batch)
+        # Concatenate predictions for all batches
+    y_proba = np.vstack(y_proba_list)
+    return y_proba
 
 def make_plots(config, classifier, X_train, y_train, X_test, y_test, target_names, method, dataset='features'):
     pl.seed_everything(config['seed'])
@@ -101,6 +130,7 @@ def make_plots(config, classifier, X_train, y_train, X_test, y_test, target_name
         # split the training dataset into train and validation
         X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=config['val_split'], random_state=config['seed'])
 
+
         train_dataset = TensorDataset(X_train, y_train)
         val_dataset = TensorDataset(X_val, y_val)
         test_dataset = TensorDataset(X_test, y_test)
@@ -121,13 +151,14 @@ def make_plots(config, classifier, X_train, y_train, X_test, y_test, target_name
         val_dataloader = DataLoader(val_dataset, batch_size=config['batch_size'], shuffle=False, num_workers=config['num_workers'])
         test_dataloader = DataLoader(test_dataset, batch_size=config['batch_size'], shuffle=False, num_workers=config['num_workers'])
 
+        # X_test = X_test.cuda()
+        # y_test = y_test.cuda()
+
         if config['model_path'] is not None and config['model_path'] != '':
             classifier = LSTMClassifier.load_from_checkpoint(config['model_path'])
             # move to gpu
             classifier.cuda()
             # move the features to the gpu
-            X_test = X_test.cuda()
-            y_test = y_test.cuda()
 
             # classifier.load_state_dict(torch.load(config['model_path'])['state_dict'])
         else:
@@ -142,7 +173,7 @@ def make_plots(config, classifier, X_train, y_train, X_test, y_test, target_name
                 # or another metric such as 'val_accuracy'
                 monitor=config['monitor_metric'],
                 dirpath='./checkpoints',
-                filename='classifier-'+ task + '-{epoch:02d}-{val_loss:.2f}',
+                filename='classifier-'+ task + '-{epoch:02d}-{val_loss:.2f}-{val_acc:.2f}',
                 save_top_k=1,
                 mode='min',  # 'min' for loss and 'max' for accuracy
             )
@@ -178,19 +209,15 @@ def make_plots(config, classifier, X_train, y_train, X_test, y_test, target_name
             # best_model_path = checkpoint_callback.best_model_path
             # classifier = Autoencoder.load_from_checkpoint(best_model_path)
             # classifier.load_state_dict(torch.load(best_model_path)['state_dict'])
+            classifier = LSTMClassifier.load_from_checkpoint(checkpoint_callback.best_model_path)
 
 
-        # save the model
-        # torch.save(classifier.state_dict(), f"results/{model}-{task}-{method}-{dataset}-model.pth")
 
-        # get the predictions list
-        # y_proba = trainer.predict(classifier, test_dataloader)
-        y_proba = classifier(X_test)
-        y_proba = y_proba.detach().cpu().numpy()
+
+        # predict
+        y_proba = predict(classifier, test_dataloader)
         y_proba = y_proba.reshape(-1, config['num_classes'])
         yhat = np.argmax(y_proba, axis=1)
-        print("y_proba shape: ", y_proba.shape)
-        print("yhat shape: ", yhat.shape)
 
 
     accuracy = accuracy_score(y_test, yhat)
