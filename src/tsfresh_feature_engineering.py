@@ -38,7 +38,7 @@ from sklearn.model_selection import cross_val_score
 from sklearn.metrics import accuracy_score, classification_report
 
 
-def process_chunk(chunk_X, cluster, chunk_id, default_fc_parameters):
+def process_chunk(chunk_X, cluster, client, chunk_id, default_fc_parameters):
     """
     Process a single chunk of data.
 
@@ -52,6 +52,8 @@ def process_chunk(chunk_X, cluster, chunk_id, default_fc_parameters):
         DataFrame containing features extracted from the chunk.
     """
     print(f"Processing chunk {chunk_id}")
+    # gather the chunk to the workers
+    chunk_X = client.gather(chunk_X)
 
     ids = np.repeat(np.arange(chunk_X.shape[0]), chunk_X.shape[1])
     time_array = np.tile(np.arange(chunk_X.shape[1]), chunk_X.shape[0])
@@ -115,9 +117,11 @@ def feature_engineering(data_root_dir, target_label, subset, client, cluster):
     start_time = time.time()
 
     # Process each chunk
-    for chunk_start in tqdm(range(0, len(X), chunk_size)):
+    for chunk_start in range(0, len(X), chunk_size):
         chunk_X = X[chunk_start:chunk_start + chunk_size]
-        chunk_features = process_chunk(chunk_X, cluster, chunk_start, settings.EfficientFCParameters())
+        # scatter the chunk to the workers
+        chunk_X = client.scatter(chunk_X, broadcast=True)
+        chunk_features = process_chunk(chunk_X, cluster, client, chunk_start, settings.EfficientFCParameters())
         chunk_features_list.append(chunk_features)
 
     # Combine features from all chunks
@@ -162,8 +166,8 @@ def main():
         "unset LD_LIBRARY_PATH",
     ]
     cluster = SLURMCluster(
-        cores=4,
-        processes=2,
+        cores=16,
+        processes=4,
         memory="16GB",
         walltime="01:00:00",
         job_script_prologue=job_script_prologue,
