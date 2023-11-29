@@ -66,6 +66,9 @@ def merge_config_with_cli_args(config):
     parser.add_argument('--dataset_path', type=str,
                         default='data/datasets.pkl')
 
+    # data_dir for saving the dataset
+    parser.add_argument('--data_dir', type=str, default='datasets/')
+
     # add target label with some specific choices
     parser.add_argument('--target_label', type=str,
                         default='category', choices=['category', 'class', 'state'])

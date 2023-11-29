@@ -161,8 +161,10 @@ cython_debug/
 
 # datasets
 data/
+datasets/
 artifacts/
 logs/
+*_logs/
 .idea/
 .virtual_documents/
 jobs/
