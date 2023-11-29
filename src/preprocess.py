@@ -47,6 +47,8 @@ def main():
 
     config = merge_config_with_cli_args(default_config)
 
+    config['use_class_weights'] = True
+
     # seed everything
     seed = config['seed']
     pl.seed_everything(seed)
