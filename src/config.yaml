@@ -18,7 +18,7 @@ val_split: 0.20
 max_epochs: 500
 min_epochs: 5
 num_workers: 4
-sequence_length: 1000
+sequence_length: 10000
 early_stopping_patience: 10
 learning_rate_patience: 3
 monitor_metric: 'val_loss'

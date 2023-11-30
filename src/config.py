@@ -43,6 +43,8 @@ def merge_config_with_cli_args(config):
     parser.add_argument('--conv2_out_channels', type=int, default=128)
     # add segment overlap
     parser.add_argument('--overlap', type=float, default=0.75)
+    # add sequence length
+    parser.add_argument('--sequence_length', type=int, default=10000)
     # add dropout
     parser.add_argument('--dropout', type=float, default=0.2)
 

@@ -117,7 +117,7 @@ def feature_engineering(data_root_dir, target_label, subset, client, cluster):
     start_time = time.time()
 
     # Process each chunk
-    for chunk_start in range(0, len(X), chunk_size):
+    for chunk_start in tqdm(range(0, len(X), chunk_size)):
         chunk_X = X[chunk_start:chunk_start + chunk_size]
         # scatter the chunk to the workers
         chunk_X = client.scatter(chunk_X, broadcast=True)
@@ -166,9 +166,9 @@ def main():
         "unset LD_LIBRARY_PATH",
     ]
     cluster = SLURMCluster(
-        cores=16,
+        cores=12,
         processes=4,
-        memory="16GB",
+        memory="128GB",
         walltime="01:00:00",
         job_script_prologue=job_script_prologue,
         worker_extra_args=["--lifetime", "55m", "--lifetime-stagger", "4m"],
