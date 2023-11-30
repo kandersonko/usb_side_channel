@@ -27,7 +27,8 @@ from dask.distributed import Client
 from dask_jobqueue import SLURMCluster
 
 import dask.dataframe as dd
-from dask import optimize, compute
+from dask import optimize
+from dask import delayed, compute
 
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
@@ -37,33 +38,41 @@ from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
 from sklearn.model_selection import cross_val_score
 from sklearn.metrics import accuracy_score, classification_report
 
+# environment variables to prevent over provisioning
+import os
+os.environ['OMP_NUM_THREADS'] = "1"
+os.environ['MKL_NUM_THREADS'] = "1"
+os.environ['OPENBLAS_NUM_THREADS'] = "1"
 
-def process_chunk(chunk_X, cluster, client, chunk_id, default_fc_parameters):
+
+def process_chunk(chunk_x, cluster, client, chunk_id, default_fc_parameters):
     """
-    Process a single chunk of data.
+    process a single chunk of data.
 
-    Args:
-        chunk_X: The chunk of the dataset to be processed.
-        cluster: The Dask cluster.
-        chunk_id: Identifier for the chunk.
-        default_fc_parameters: The feature extraction settings for tsfresh.
+    args:
+        chunk_x: the chunk of the dataset to be processed.
+        cluster: the dask cluster.
+        chunk_id: identifier for the chunk.
+        default_fc_parameters: the feature extraction settings for tsfresh.
 
-    Returns:
-        DataFrame containing features extracted from the chunk.
+    returns:
+        dataframe containing features extracted from the chunk.
     """
-    print(f"Processing chunk {chunk_id}")
+    print(f"processing chunk {chunk_id}")
     # gather the chunk to the workers
-    chunk_X = client.gather(chunk_X)
+    # chunk_x = client.gather(chunk_x)
 
-    ids = np.repeat(np.arange(chunk_X.shape[0]), chunk_X.shape[1])
-    time_array = np.tile(np.arange(chunk_X.shape[1]), chunk_X.shape[0])
-    df_chunk = pd.DataFrame({'id': ids, 'time': time_array, 'value': chunk_X.flatten()})
+    ids = np.repeat(np.arange(chunk_x.shape[0]), chunk_x.shape[1])
+    time_array = np.tile(np.arange(chunk_x.shape[1]), chunk_x.shape[0])
+    df_chunk = pd.DataFrame({'id': ids, 'time': time_array, 'value': chunk_x.flatten()})
 
-    # Convert chunk to Dask DataFrame
-    data_chunk = dd.from_pandas(df_chunk, npartitions=10)  # Adjust npartitions as needed
+    # convert chunk to dask dataframe
+    data_chunk = dd.from_pandas(df_chunk, npartitions=5)  # adjust npartitions as needed
 
-    # Extract features using tsfresh with Dask for the chunk
+    # extract features using tsfresh with dask for the chunk
+
     distributor = ClusterDaskDistributor(cluster)
+
     chunk_features = extract_features(
         data_chunk.compute(),
         column_id="id",
@@ -72,14 +81,18 @@ def process_chunk(chunk_X, cluster, client, chunk_id, default_fc_parameters):
         distributor=distributor,
         default_fc_parameters=default_fc_parameters,
         disable_progressbar=True,
+        pivot=False,
+        n_jobs=4,
     )
-    # features = dask_feature_extraction_on_chunk(
+
+    # df_grouped = data_chunk.groupby(["id", "kind"])
+    # chunk_features = dask_feature_extraction_on_chunk(
     #     df_grouped,
     #     column_id="id",
     #     column_kind=target_label,
     #     column_sort="time",
     #     column_value="value",
-    #     default_fc_parameters=settings.EfficientFCParameters(),
+    #     default_fc_parameters=settings.efficientfcparameters(),
     # )
 
     return chunk_features
@@ -103,13 +116,13 @@ def feature_engineering(data_root_dir, target_label, subset, client, cluster):
     plot_data = []
 
 
-    distributor = ClusterDaskDistributor(cluster)
+    # distributor = ClusterDaskDistributor(cluster)
 
 
     print("Extracting features")
 
     # Determine chunk size
-    chunk_size = 10000
+    chunk_size = 1000
 
     # Initialize empty list to collect features from each chunk
     chunk_features_list = []
@@ -120,9 +133,12 @@ def feature_engineering(data_root_dir, target_label, subset, client, cluster):
     for chunk_start in tqdm(range(0, len(X), chunk_size)):
         chunk_X = X[chunk_start:chunk_start + chunk_size]
         # scatter the chunk to the workers
-        chunk_X = client.scatter(chunk_X, broadcast=True)
+        # chunk_X = client.scatter(chunk_X, broadcast=True)
         chunk_features = process_chunk(chunk_X, cluster, client, chunk_start, settings.EfficientFCParameters())
         chunk_features_list.append(chunk_features)
+
+    # Compute all tasks in parallel
+    chunk_features_list = compute(*delayed_tasks)
 
     # Combine features from all chunks
     combined_features = pd.concat(chunk_features_list)
@@ -166,15 +182,16 @@ def main():
         "unset LD_LIBRARY_PATH",
     ]
     cluster = SLURMCluster(
-        cores=12,
+        cores=16,
         processes=4,
-        memory="128GB",
-        walltime="01:00:00",
+        memory="8GB",
+        walltime="00:30:00",
+        shebang="#!/usr/bin/env sh",
         job_script_prologue=job_script_prologue,
-        worker_extra_args=["--lifetime", "55m", "--lifetime-stagger", "4m"],
+        worker_extra_args=["--lifetime", "25m", "--lifetime-stagger", "4m"],
         # interface='ib0',
-        death_timeout=120,
-        # queue="reg",
+        queue="short",
+        # death_timeout=120,
         log_directory="jobs/dask_logs",
         # local_directory="/tmp/",
     )
@@ -184,7 +201,7 @@ def main():
 
     cluster.adapt(minimum=10, maximum=500)
 
-    cluster.scale(10)
+    cluster.scale(20)
 
     # create a dask client
     client = Client(cluster)
