@@ -1,10 +1,10 @@
 #!/usr/bin/env sh
 #SBATCH -N 1
-#SBATCH --time=04:00:00
+#SBATCH --time=12:00:00
 #SBATCH --mem=32G
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=36
-#SBATCH -p short
+#SBATCH -p eight
 #SBATCH --output=jobs/tsfresh_%A.stdout
 #SBATCH --error=jobs/tsfresh_%A.stderr
 

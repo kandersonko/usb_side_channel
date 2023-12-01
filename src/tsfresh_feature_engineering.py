@@ -66,28 +66,8 @@ def process_chunk(chunk_x, cluster, client, chunk_id, default_fc_parameters):
     time_array = np.tile(np.arange(chunk_x.shape[1]), chunk_x.shape[0])
     df_chunk = pd.DataFrame({'id': ids, 'time': time_array, 'value': chunk_x.flatten()})
 
-    # workers_info = client.scheduler_info()["workers"]
-    # n_workers = len(workers_info)
-    # n_cores = None
-    # if n_workers == 0:
-    #     n_cores = 4
-    #     n_workers = 1
-    # else:
-    #     n_cores = int([workers_info[w]["metrics"]["cpu"] for w in workers_info][0])
-    # n_jobs = n_workers * n_cores
-
-    # chunk_size, extra = divmod(chunk_x.shape[0], n_workers * 5)
-    # if extra:
-    #     chunk_size += 1
-
-    # print("n_cores: ", n_cores)
-    # print(f"n_workers: {n_workers}")
-    # print(f"n_jobs: {n_jobs}")
-    # print(f"chunk_size: {chunk_size}")
-
     # convert chunk to dask dataframe
-    # data_chunk = dd.from_pandas(df_chunk, chunksize=chunk_size)
-    n_jobs = 4
+    # n_jobs = 4
     data_chunk = dd.from_pandas(df_chunk, npartitions=10)
 
     # extract features using tsfresh with dask for the chunk
@@ -105,9 +85,10 @@ def process_chunk(chunk_x, cluster, client, chunk_id, default_fc_parameters):
         default_fc_parameters=default_fc_parameters,
         disable_progressbar=True,
         # pivot=False,
-        n_jobs=n_jobs, # default to all cores
+        # n_jobs=n_jobs, # default to all cores
         # impute_function=impute,
     )
+
 
     return chunk_features
 
@@ -119,15 +100,15 @@ def feature_engineering(data_root_dir, target_label, subset, client, cluster):
     dataset_path = data_root_dir+f'{target_label}_dataset.npz'
     dataset = np.load(dataset_path, allow_pickle=True)
 
-    X = dataset[f'X_{subset}'][:100]
-    y = dataset[f'y_{subset}'][:100]
+    X = dataset[f'X_{subset}']
+    # y = dataset[f'y_{subset}']
 
 
     print("X shape: ", X.shape)
-    print("y shape: ", y.shape)
+    # print("y shape: ", y.shape)
 
     # scale the dask workers
-    cluster.scale(10)
+    cluster.scale(20)
 
     plot_data = []
 
@@ -137,7 +118,7 @@ def feature_engineering(data_root_dir, target_label, subset, client, cluster):
 
     start_time = time.time()
 
-    chunk_size = 10
+    chunk_size = 100
 
     chunk_features_list = []
 
