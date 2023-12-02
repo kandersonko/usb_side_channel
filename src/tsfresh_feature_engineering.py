@@ -104,8 +104,6 @@ def feature_engineering(data_root_dir, target_label, subset, client, cluster, ch
     dataset = np.load(dataset_path, allow_pickle=True)
 
     X = dataset[f'X_{subset}']
-    # convert X to float64
-    # X = X.astype(np.float64)
     # y = dataset[f'y_{subset}']
 
     ids = np.repeat(np.arange(X.shape[0]), X.shape[1])
@@ -113,6 +111,8 @@ def feature_engineering(data_root_dir, target_label, subset, client, cluster, ch
     df = pd.DataFrame({'id': ids, 'time': time_array, 'value': X.flatten()})
 
     data = dd.from_pandas(df, npartitions=chunk_size)
+
+    data = client.persist(data)
 
     # convert chunk to dask dataframe
     n_cores = int(os.getenv("NUMBER_OF_CPUS") or cpu_count())
@@ -287,6 +287,7 @@ def main():
 
     # close the dask client
     client.close()
+    cluster.close()
 
     print("Done!")
 
