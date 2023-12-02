@@ -81,6 +81,18 @@ def merge_config_with_cli_args(config):
     # add model path
     parser.add_argument('--model_path', type=str, default='')
 
+    # add workers
+    parser.add_argument('--workers', type=int, default=4)
+
+    # add memory
+    parser.add_argument('--memory', type=str, default='4GB')
+
+    # add chunk_size
+    parser.add_argument('--chunk_size', type=int, default=10)
+
+    # add use_local_cluster
+    parser.add_argument('--use_local_cluster', action='store_true', default=True)
+
     # Use parse_known_args to accept arbitrary arguments
     args, unknown_args = parser.parse_known_args()
 

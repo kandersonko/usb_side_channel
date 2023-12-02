@@ -24,3 +24,6 @@ learning_rate_patience: 3
 monitor_metric: 'val_loss'
 seed: 42
 accumulate_grad_batches: 5
+workers: 4
+memory: '4GB'
+chunk_size: 10

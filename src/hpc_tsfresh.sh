@@ -1,10 +1,10 @@
 #!/usr/bin/env sh
 #SBATCH -N 1
 #SBATCH --time=12:00:00
-#SBATCH --mem=32G
+#SBATCH --mem=200G
 #SBATCH --nodes=1
-#SBATCH --cpus-per-task=36
-#SBATCH -p eight
+#SBATCH --ntasks-per-node=72
+#SBATCH -p gpu-8
 #SBATCH --output=jobs/tsfresh_%A.stdout
 #SBATCH --error=jobs/tsfresh_%A.stderr
 
@@ -30,8 +30,10 @@ which python
 # nvidia-smi -L
 
 # fix issues of pytorch with cudnn library
-unset LD_LIBRARY_PATH
+# unset LD_LIBRARY_PATH
 
 # Execute your script
 # srun python tsfresh_feature_engineering.py
-python tsfresh_feature_engineering.py
+srun python tsfresh_feature_engineering.py \
+    --target_label=category --dataset_subset=test \
+    --workers=92 --memory='2GB' --chunk_size=10
