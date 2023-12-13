@@ -60,8 +60,13 @@ def merge_config_with_cli_args(config):
     parser.add_argument('--classification_loss_weight',
                         type=float, default=1.0)
 
-    # add no_class_weights boolean flag with default False
-    parser.add_argument('--use_class_weights', action='store_true', default=False)
+    # # add no_class_weights boolean flag with default False
+    # parser.add_argument('--use_class_weights', action='store_true', default=False)
+
+    # add log bool argument
+    parser.add_argument('--log', action='store_true', default=False)
+    # add dataset name argument
+    parser.add_argument('--dataset', type=str, default='dataset_a')
     # add dataset subset
     parser.add_argument('--dataset_subset', type=str, default='all')
     # add dataset path
@@ -69,11 +74,11 @@ def merge_config_with_cli_args(config):
                         default='data/datasets.pkl')
 
     # data_dir for saving the dataset
-    parser.add_argument('--data_dir', type=str, default='datasets/')
+    parser.add_argument('--data_dir', type=str, default='datasets')
 
     # add target label with some specific choices
     parser.add_argument('--target_label', type=str,
-                        default='category', choices=['category', 'class', 'state'])
+                        default='category', choices=['category', 'class', 'state', 'device', 'device_name', 'brand'])
 
     # add number of classes
     parser.add_argument('--num_classes', type=int, default=5)
@@ -88,7 +93,7 @@ def merge_config_with_cli_args(config):
     parser.add_argument('--memory', type=str, default='4GB')
 
     # add chunk_size
-    parser.add_argument('--chunk_size', type=int, default=10)
+    parser.add_argument('--chunk_size', type=int, default=1000)
 
     # add use_local_cluster
     parser.add_argument('--use_local_cluster', action='store_true', default=True)

@@ -21,10 +21,11 @@ import matplotlib.pyplot as plt
 #from imblearn.under_sampling import RandomUnderSampler
 
 from tsfresh import extract_features, extract_relevant_features, select_features
-from tsfresh.utilities.distribution import MultiprocessingDistributor
+# from tsfresh.utilities.distribution import MultiprocessingDistributor
 from tsfresh.feature_extraction import feature_calculators, settings
+from tsfresh.feature_extraction.data import to_tsdata
 
-from tsfresh.utilities.distribution import ClusterDaskDistributor
+from tsfresh.utilities.distribution import ClusterDaskDistributor, LocalDaskDistributor
 from tsfresh.convenience.bindings import dask_feature_extraction_on_chunk
 
 from tsfresh.utilities.dataframe_functions import impute, impute_dataframe_zero
@@ -50,6 +51,12 @@ from multiprocessing import cpu_count
 from config import default_config, merge_config_with_cli_args
 
 
+def create_df(sample_id, data):
+    return pd.DataFrame({
+        'id': sample_id,
+        'time': range(data.shape[1]),
+        'value': data[sample_id, :]
+    })
 
 def process_chunk(chunk_x, chunk_id):
     """
@@ -62,18 +69,22 @@ def process_chunk(chunk_x, chunk_id):
     returns:
         dataframe containing features extracted from the chunk.
     """
-    ids = np.repeat(np.arange(chunk_x.shape[0]), chunk_x.shape[1])
-    time_array = np.tile(np.arange(chunk_x.shape[1]), chunk_x.shape[0])
-    df_chunk = pd.DataFrame({'id': ids, 'time': time_array, 'value': chunk_x.flatten()})
+
+    dfs = []
+    for sample_id in range(chunk_x.shape[0]):
+        df_sample = create_df(sample_id, chunk_x)
+        dfs.append(df_sample)
+
+    df_chunk = pd.concat(dfs)
+
+    data_chunk = dd.from_pandas(df_chunk, npartitions=10)
 
     # convert chunk to dask dataframe
     n_cores = int(os.getenv("NUMBER_OF_CPUS") or cpu_count())
     n_jobs = max(1, n_cores // 2)
-    data_chunk = dd.from_pandas(df_chunk, npartitions=10)
 
     # extract features using tsfresh with dask for the chunk
 
-    # distributor = ClusterDaskDistributor(cluster)
 
     # compute the number of n_jobs based on the number of workers
     #
@@ -88,7 +99,7 @@ def process_chunk(chunk_x, chunk_id):
         default_fc_parameters=default_fc_parameters,
         disable_progressbar=True,
         # pivot=False,
-        n_jobs=n_jobs, # default to all cores
+        n_jobs=1, # default to all cores
         # impute_function=impute,
     )
 
@@ -96,93 +107,121 @@ def process_chunk(chunk_x, chunk_id):
     return chunk_features
 
 
-def feature_engineering(data_root_dir, target_label, subset, client, cluster, chunk_size):
+def feature_engineering(data_root_dir, target_label, subset, client, cluster, distributor, chunk_size):
 
+    global_start_time = time.time()
     # load the dataset saved as numpy compressed file
     print("Loading the dataset")
-    dataset_path = data_root_dir+f'{target_label}_dataset.npz'
+    dataset_path = data_root_dir+f'/{target_label}_dataset.npz'
     dataset = np.load(dataset_path, allow_pickle=True)
 
     X = dataset[f'X_{subset}']
     # y = dataset[f'y_{subset}']
 
-    ids = np.repeat(np.arange(X.shape[0]), X.shape[1])
-    time_array = np.tile(np.arange(X.shape[1]), X.shape[0])
-    df = pd.DataFrame({'id': ids, 'time': time_array, 'value': X.flatten()})
-
-    data = dd.from_pandas(df, npartitions=chunk_size)
-
-    data = client.persist(data)
-
-    # convert chunk to dask dataframe
-    n_cores = int(os.getenv("NUMBER_OF_CPUS") or cpu_count())
-    n_jobs = max(1, n_cores // 2)
-
-    # extract features using tsfresh with dask for the chunk
-
-    # distributor = ClusterDaskDistributor(cluster)
-
-    # compute the number of n_jobs based on the number of workers
-    #
-
-
-
     print("X shape: ", X.shape)
     # print("y shape: ", y.shape)
 
+    # Populate the DataFrame
+    dfs = []
+    for sample_id in range(X.shape[0]):
+        df_sample = create_df(sample_id, X)
+        dfs.append(df_sample)
+
+    data = pd.concat(dfs)
+
+
+    # data = dd.from_pandas(df, npartitions=chunk_size)
+
+    # data = client.persist(data)
+
+    # data = data.compute()
+
+    print("data: ", data.head())
+    print("len(data): ",  len(data))
 
     plot_data = []
 
-    # distributor = ClusterDaskDistributor(cluster)
 
     print("Extracting features")
 
     start_time = time.time()
 
-    # chunk_features_list = []
-
-    # print("Processing the chunks")
-    # # Process each chunk
-    # for chunk_start in tqdm(range(0, len(X), chunk_size)):
-    #     chunk_X = X[chunk_start:chunk_start + chunk_size]
-
-    #     # default_fc_parameters = settings.EfficientFCParameters()
-    #     chunk_features = process_chunk(chunk_X, cluster, client, chunk_start, default_fc_parameters)
-    #     # chunk_features = dask.delayed(process_chunk)(chunk_X, chunk_start)
-    # print("Computing the chunks")
-    # # Gather the results from the workers
-    # chunk_features_list = dask.compute(*chunk_features_list)
-    # # Combine features from all chunks
-    # features = pd.concat(chunk_features_list, axis=0)
-
-    partitions = data.to_delayed()
     default_fc_parameters = settings.EfficientFCParameters()
 
-    chunk_features = [dask.delayed(extract_features)(
-        data_chunk,
+    n_workers = len(client.scheduler_info().get("workers"))
+
+    # data = dd.from_pandas(data, chunksize=chunk_size)
+
+
+    # data = dd.from_pandas(data, npartitions=chunk_size)
+
+    # chunk_size, extra = divmod(len(X), n_workers * 5)
+    # if extra:
+    #     chunk_size += 1
+
+    # partitions = data.to_delayed()
+
+    # client.scatter(partitions)
+
+    # data = client.persist(data)
+
+    # chunk_features = [dask.delayed(extract_features)(
+    #     data_chunk,
+    #     column_id="id",
+    #     column_sort="time",
+    #     column_value="value",
+    #     # distributor=distributor,
+    #     default_fc_parameters=default_fc_parameters,
+    #     disable_progressbar=True,
+    #     pivot=False,
+    #     n_jobs=0, # default to all cores
+    #     # chunksize=chunk_size,
+    #     # impute_function=impute,
+    # ) for data_chunk in partitions]
+
+    # chunk_features = dask.compute(*chunk_features)
+
+    # features = pd.concat(chunk_features, axis=0)
+
+
+    features = extract_features(
+        data,
         column_id="id",
         column_sort="time",
         column_value="value",
-        # distributor=distributor,
+        distributor=distributor,
         default_fc_parameters=default_fc_parameters,
         disable_progressbar=True,
-        # pivot=False,
-        n_jobs=1, # default to all cores
+        pivot=False,
+        # n_jobs=n_workers, # default to all cores
+        # chunksize=chunk_size,
         # impute_function=impute,
-    ) for data_chunk in partitions]
+    )
 
-    chunk_features = dask.compute(*chunk_features)
+    # pivot the data
+    data_features = to_tsdata(data, column_id="id", column_sort="time", column_value="value")
 
-    features = pd.concat(chunk_features, axis=0)
+    features = data_features.pivot(features)
 
-    print("features: ", features.head())
+    print("features: ")
+    print(features.head())
+    # print("features[0]: ", type(features[0]))
 
+    # features = features.compute()
 
-    print("imputing features")
+    print("Imputing features")
     features = impute(features)
 
-    # print("selecting features")
-    # features = select_features(features, y)
+
+    print("features: ", features.head())
+    print("features length: ", len(features))
+    print("X shape: ", X.shape)
+
+
+    # print("imputing features")
+    # features = dd.from_pandas(features, npartitions=chunk_size)
+    # features = dask.delayed(impute)(features)
+    # features = dask.compute(features)
 
     end_time = time.time()
     duration = end_time - start_time
@@ -196,9 +235,15 @@ def feature_engineering(data_root_dir, target_label, subset, client, cluster, ch
 
     # save the features with the labels
     print("Saving the features")
-    # features[target_label] = y
-    features.to_csv(data_root_dir+f'{target_label}_{subset}_tsfresh.csv')
+    features.to_csv(data_root_dir+f'/{target_label}_{subset}_tsfresh.csv')
 
+    global_end_time = time.time()
+    global_duration = global_end_time - global_start_time
+    print(f"Global duration: {global_duration:.4f} seconds")
+    # Convert the duration to minutes and seconds.
+    m, s = divmod(global_duration, 60)
+    h, m = divmod(m, 60)
+    print(f"Global duration: {h:.0f}h {m:.0f}m {s:.0f}s")
 
 
 def main():
@@ -210,11 +255,19 @@ def main():
 
     client = None
     cluster = None
+    distributor = None
 
     n_workers = max(config.get('workers', 1), n_cores//2)
-    memory = config.get('memory', '2GB')
+    memory = config.get('memory', '4GB')
 
     print(f"n_workers: {n_workers}, memory: {memory}, n_cores: {n_cores}")
+
+    # increase dask resilience
+    # dask.config.set({"distributed.comm.timeouts.connect": "60s"})
+    # dask.config.set({'distributed.scheduler.allowed-failures': 10})
+
+    # set local directory for dask workers
+    # dask.config.set({'temporary-directory': '/tmp'})
 
     if use_local_cluster:
 
@@ -226,7 +279,8 @@ def main():
         client = Client(memory_limit=memory)
         cluster = client.cluster
 
-        cluster.adapt(minimum=n_workers, maximum=n_cores)
+        # cluster.adapt(minimum=n_workers, maximum=n_cores-4)
+        cluster.adapt(minimum=10, maximum=n_cores-4)
 
     else:
         # create a dask cluster
@@ -250,17 +304,20 @@ def main():
             # local_directory="/tmp/",
         )
         print(cluster.job_script())
-        cluster.adapt(minimum=10, maximum=500)
+        cluster.adapt(minimum=10, maximum=n_cores-4)
 
         # create a dask client
         client = Client(cluster)
 
 
+    distributor = ClusterDaskDistributor(cluster)
+
     print("client: ", client)
     print("cluster: ", cluster)
 
     # scale the dask workers
-    cluster.scale(n_cores)
+    # cluster.scale(n_cores-4)
+    cluster.scale(n_workers//3)
 
     print("Waiting for workers to be ready")
     time.sleep(5)
@@ -270,22 +327,28 @@ def main():
 
     subset = config.get('dataset_subset')
 
-    chunk_size = config.get('chunk_size', 10)
+    chunk_size = config.get('chunk_size', 1000)
+    print("chunk_size: ", chunk_size)
 
     print(f"Extracting features from the {target_label} dataset")
 
     print(f"Extracting features from the {subset} subset")
-    feature_engineering(
-        data_root_dir='datasets/',
-        target_label=target_label,
-        subset=subset,
-        client=client,
-        cluster=cluster,
-        chunk_size=chunk_size,
-    )
+
+    try:
+        feature_engineering(
+            data_root_dir='datasets',
+            target_label=target_label,
+            subset=subset,
+            client=client,
+            cluster=cluster,
+            distributor=distributor,
+            chunk_size=chunk_size,
+        )
+    except Exception as e:
+        print("Exception: ", e)
 
 
-    # close the dask client
+    # # close the dask client
     client.close()
     cluster.close()
 

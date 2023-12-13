@@ -199,3 +199,6 @@ artifacts
 
 # ignore slurm job outputs
 slurm-*
+
+# ignore results
+results/

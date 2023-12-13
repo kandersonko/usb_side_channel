@@ -5,6 +5,8 @@ import pickle as pkl
 from pathlib import Path
 import torch
 from torch.utils.data import Dataset, DataLoader, Subset, random_split
+from torch.utils.data import TensorDataset, WeightedRandomSampler
+
 from sklearn.preprocessing import LabelEncoder, StandardScaler, MinMaxScaler
 from sklearn.model_selection import train_test_split
 
@@ -19,6 +21,32 @@ from utils.data import load_data
 from config import default_config as config
 from torch.utils.data import DataLoader
 from torch.nn import DataParallel
+
+def get_dataloaders(X_train, y_train, X_val, y_val, X_test, y_test, batch_size, num_workers):
+    X_train = torch.tensor(X_train, dtype=torch.float32)
+    y_train = torch.tensor(y_train, dtype=torch.long)
+    X_val = torch.tensor(X_val, dtype=torch.float32)
+    y_val = torch.tensor(y_val, dtype=torch.long)
+    X_test = torch.tensor(X_test, dtype=torch.float32)
+    y_test = torch.tensor(y_test, dtype=torch.long)
+
+    train_dataset = TensorDataset(X_train, y_train)
+    val_dataset = TensorDataset(X_val, y_val)
+    test_dataset = TensorDataset(X_test, y_test)
+
+    class_counts = torch.bincount(y_train)
+    class_weights = 1. / class_counts
+    samples_weights = class_weights[y_train]
+
+    # Create the sampler
+    sampler = WeightedRandomSampler(samples_weights, len(samples_weights))
+
+    train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers, sampler=sampler)
+    val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
+    test_dataloader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
+
+    return (train_dataloader, val_dataloader, test_dataloader), class_weights
+
 
 def compute_class_weights(labels):
     """
@@ -137,11 +165,12 @@ def encode_dataset_in_batches(model, dataset, num_workers=4, use_cuda=True):
     return torch.cat(encoded_batches).numpy()
 
 
-def extract_features(model, data_module=None, train_dataloader=None, val_dataloader=None):
+def extract_features(model, data_module=None, train_dataloader=None, val_dataloader=None, test_dataloader=None):
     """
-    Extracts the segments and labels from the training and validation datasets
+    Extracts the segments and labels from the data module or data loaders
     """
     train_segments, train_labels = [], []
+    val_segments, val_labels = [], []
     test_segments, test_labels = [], []
 
     num_workers = cpu_count() // 2
@@ -152,8 +181,9 @@ def extract_features(model, data_module=None, train_dataloader=None, val_dataloa
     if data_module:
         train_dataloader = data_module.train_dataloader(num_workers=num_workers, batch_size=batch_size)
         val_dataloader = data_module.val_dataloader(num_workers=num_workers, batch_size=batch_size)
+        test_dataloader = data_module.test_dataloader(num_workers=num_workers, batch_size=batch_size)
     else:
-        assert train_dataloader is not None and val_dataloader is not None, "Provide either a data module or the train and validation dataloaders"
+        assert train_dataloader is not None and val_dataloader is not None and train_dataloader is not None, "Provide either a data module or the train, validation, and test dataloaders"
 
 
     if torch.cuda.is_available():
@@ -177,6 +207,15 @@ def extract_features(model, data_module=None, train_dataloader=None, val_dataloa
                 segments = segments.cuda(non_blocking=True)
                 batch_labels = batch_labels.cuda(non_blocking=True)
             segments_encoded = model.module.encoder(segments).detach()
+            val_segments.append(segments_encoded)
+            val_labels.append(batch_labels)
+
+        for batch in tqdm(iter(test_dataloader)):
+            segments, batch_labels = batch
+            if torch.cuda.is_available():
+                segments = segments.cuda(non_blocking=True)
+                batch_labels = batch_labels.cuda(non_blocking=True)
+            segments_encoded = model.module.encoder(segments).detach()
             test_segments.append(segments_encoded)
             test_labels.append(batch_labels)
 
@@ -184,10 +223,13 @@ def extract_features(model, data_module=None, train_dataloader=None, val_dataloa
     X_train = torch.cat(train_segments).cpu().numpy()
     y_train = torch.cat(train_labels).cpu().numpy()
 
+    X_val = torch.cat(val_segments).cpu().numpy()
+    y_val = torch.cat(val_labels).cpu().numpy()
+
     X_test = torch.cat(test_segments).cpu().numpy()
     y_test = torch.cat(test_labels).cpu().numpy()
 
-    return X_train, y_train, X_test, y_test
+    return X_train, y_train, X_val, y_val, X_test, y_test
 
 
 def extract_segments(data_module):

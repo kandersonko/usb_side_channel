@@ -31,7 +31,6 @@ class Autoencoder(pl.LightningModule):
             num_lstm_layers,
             dropout,
             monitor_metric,
-            class_weights=None,
             **kwargs,
     ):
         super().__init__()
@@ -50,7 +49,6 @@ class Autoencoder(pl.LightningModule):
         self.reconstruction_loss_weight = reconstruction_loss_weight
         self.classification_loss_weight = classification_loss_weight
 
-        self.class_weights = class_weights
 
         # conv1d expects (batch, channels, seq_len)
         self.example_input_array = torch.rand(self.batch_size, sequence_length)
@@ -94,10 +92,11 @@ class Autoencoder(pl.LightningModule):
 
         # Loss Functions
         self.reconstruction_loss_fn = nn.MSELoss()
-        if self.class_weights is None:
-            self.classification_loss_fn = nn.CrossEntropyLoss()
-        else:
-            self.classification_loss_fn = nn.CrossEntropyLoss(weight=self.class_weights)
+        # if self.class_weights is None:
+        #     self.classification_loss_fn = nn.CrossEntropyLoss()
+        # else:
+        #     self.classification_loss_fn = nn.CrossEntropyLoss(weight=self.class_weights)
+        self.classification_loss_fn = nn.CrossEntropyLoss()
 
     def forward(self, x):
         # import pdb; pdb.set_trace()
@@ -392,9 +391,9 @@ class CNNLSTMEncoder(nn.Module):
 
         # Define CNN layers
         self.conv1 = nn.Conv1d(in_channels=num_features, out_channels=conv1_out_channels, kernel_size=3, stride=1, padding=1)
-        self.bn1 = nn.BatchNorm1d(conv1_out_channels)
+        # self.bn1 = nn.BatchNorm1d(conv1_out_channels)
         self.conv2 = nn.Conv1d(in_channels=conv1_out_channels, out_channels=conv2_out_channels, kernel_size=3, stride=1, padding=1)
-        self.bn2 = nn.BatchNorm1d(conv2_out_channels)
+        # self.bn2 = nn.BatchNorm1d(conv2_out_channels)
         self.pool = nn.MaxPool1d(kernel_size=2, stride=2)
 
         # Calculate the size of the features after the CNN layers
@@ -423,13 +422,13 @@ class CNNLSTMEncoder(nn.Module):
 
         # x = torch.relu(self.bn1(self.conv1(x)))
         x = self.conv1(x)
-        x = self.bn1(x)
+        # x = self.bn1(x)
         x = torch.relu(x)
         x = self.pool(x)
 
         # x = torch.relu(self.bn2(self.conv2(x)))
         x = self.conv2(x)
-        x = self.bn2(x)
+        # x = self.bn2(x)
         x = torch.relu(x)
 
         x = self.pool(x)

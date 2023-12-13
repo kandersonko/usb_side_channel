@@ -4,6 +4,8 @@ import matplotlib.pyplot as plt
 
 from tqdm import tqdm
 
+from tsfresh import select_features
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -40,7 +42,10 @@ from config import default_config, merge_config_with_cli_args
 
 from dataset import compute_class_weights
 
-from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.svm import SVC
 
 # Define a function to perform predictions
 def predict(model, dataloader):
@@ -68,22 +73,14 @@ def predict(model, dataloader):
     y_proba = np.vstack(y_proba_list)
     return y_proba
 
-def make_plots(config, classifier, X_train, y_train, X_test, y_test, target_names, method, dataset='features'):
+def make_plots(config, target_label, X_train, y_train, X_val, y_val, X_test, y_test, target_names, method, dataset='features', dataset_name='dataset_a'):
     pl.seed_everything(config['seed'])
     task = config['task']
     model = config['classifier']
+    num_classes = len(target_names)
 
-    if task == "identification":
-        config['target_label'] = "category"
-        config['num_classes'] = 5
-        title = 'Identification'
-    elif task == "detection":
-        config['target_label'] = "class"
-        config['num_classes'] = 2
-        title = 'Anomaly Detection'
-    else:
+    if task not in ["identification", "detection"]:
         raise ValueError("Provide a valid task")
-
 
     print("Training the classifier")
 
@@ -97,9 +94,17 @@ def make_plots(config, classifier, X_train, y_train, X_test, y_test, target_name
 
     yhat = None
     y_proba = None
-    if model == "random_forest":
+    classifier = None
+    if model in ["random_forest", "decision_tree", "KNN", "gradient_boosting", "SVC"]:
+        ml_classifiers = {
+            "random_forest": RandomForestClassifier(random_state=config['seed'], max_depth=10, n_jobs=-1),
+            "decision_tree": DecisionTreeClassifier(random_state=config['seed']),
+            "KNN": KNeighborsClassifier(n_neighbors=4),
+            "gradient_boosting": GradientBoostingClassifier(),
+            "SVC": SVC(probability=True, random_state=config['seed']),
+        }
+        classifier = ml_classifiers[model]
         classifier.fit(X_train, y_train)
-
         yhat = classifier.predict(X_test)
         y_proba = classifier.predict_proba(X_test)
 
@@ -224,7 +229,13 @@ def make_plots(config, classifier, X_train, y_train, X_test, y_test, target_name
     report = classification_report(y_test, yhat, target_names=target_names)
     print(report)
     # save the classification report
-    with open(f"results/{model}-{task}-{method}-{dataset}-classification_report.txt", "w") as f:
+    with open(f"results/{model}-{task}-{method}-{dataset}-{dataset_name}-classification_report.txt", "w") as f:
+        # write the dataset name and model name
+        f.write(f"Model: {model}\n")
+        f.write(f"Dataset: {dataset_name}\n")
+        f.write(f"Method: {method}\n")
+        # add new line
+        f.write("\n")
         f.write(report)
 
         # #plot the confusion matrix
@@ -243,13 +254,16 @@ def make_plots(config, classifier, X_train, y_train, X_test, y_test, target_name
     plt.xticks(rotation=45, ticks=range(0, len(target_names)), labels=target_names)
     plt.yticks(rotation=45, ticks=range(0, len(target_names)), labels=target_names)
     # save figure
-    plt.savefig(f"results/{model}-{task}-{method}-{dataset}-confusion_matrix.png", dpi=300, bbox_inches="tight")
+    title = f"{target_label.capitalize()} {task} Confusion Matrix [Model: {model}, Dataset: {dataset_name}]"
+    plt.title(title)
+    plt.savefig(f"results/{model}-{task}-{method}-{dataset}-{dataset_name}-confusion_matrix.png", dpi=300, bbox_inches="tight")
 
     # Predict probabilities for each class
 
     # Number of classes
-    n_classes = y_proba.shape[1]
-    # print("n_classes: ", n_classes)
+    # n_classes = y_proba.shape[1]
+    n_classes = len(target_names)
+    print("n_classes: ", n_classes)
 
     # Initialize dictionaries for ROC AUC metrics
     fpr = dict()
@@ -261,7 +275,7 @@ def make_plots(config, classifier, X_train, y_train, X_test, y_test, target_name
     plt.figure()
 
     # Binary classification
-    if n_classes != 5:
+    if n_classes == 1:
         fpr, tpr, _ = roc_curve(y_test, y_proba[:, 1])
         roc_auc = auc(fpr, tpr)
         plt.plot(fpr, tpr, color='darkorange', lw=2,
@@ -277,16 +291,18 @@ def make_plots(config, classifier, X_train, y_train, X_test, y_test, target_name
             plt.plot(fpr[i], tpr[i], color=colors[i % len(colors)], lw=2,
                     label='ROC curve of class {0} (area = {1:0.2f})'.format(target_name, roc_auc[i]))
 
+
+    title = f"{target_label.capitalize()} {task} ROC AUC [Model: {model}, Dataset: {dataset_name}]"
     # Plot for both cases
     plt.plot([0, 1], [0, 1], 'k--', lw=2)
     plt.xlim([0.0, 1.0])
     plt.ylim([0.0, 1.05])
     plt.xlabel('False Positive Rate')
     plt.ylabel('True Positive Rate')
-    plt.title(f'{title} ROC AUC')
+    plt.title(title)
     plt.legend(loc="lower right")
     # save figure
-    plt.savefig(f"results/{model}-{task}-{method}-{dataset}-roc_auc.png", dpi=300, bbox_inches="tight")
+    plt.savefig(f"results/{model}-{task}-{method}-{dataset}-{dataset_name}-roc_auc.png", dpi=300, bbox_inches="tight")
 
 def main():
 
@@ -303,90 +319,83 @@ def main():
 
     method = config.get('method')
     if method is None:
-        raise ValueError("Provide the method name (missing argument --method) e.g. mean or median")
+        raise ValueError("Provide the method name (missing argument --method) e.g. raw or tsfresh or encoder")
 
-    print("Setting up the model")
-    classifier = None
-    if classifier_name == 'random_forest':
-        classifier = RandomForestClassifier(max_depth=10, random_state=42, n_jobs=-1)
-        # load the features
-    elif classifier_name == 'lstm':
-        classifier = LSTMClassifier(**config)
 
     # load the features
     print("Loading the features")
 
+    data_dir = config['data_dir']
+
     task = config['task']
 
-    if method == 'raw':
-        subset = None
-        if task == 'identification':
-            subset = 'category'
-        elif task == 'detection':
-            subset = 'class'
-        X_train = np.load(f"data/X_{subset}_train_raw.npy")
-        y_train = np.load(f"data/y_{subset}_train_raw.npy")
-        X_test = np.load(f"data/X_{subset}_test_raw.npy")
-        y_test = np.load(f"data/y_{subset}_test_raw.npy")
+    dataset_name = config['dataset']
+    target_label = config['target_label']
 
-        target_names = np.load(f"data/{subset}_target_names_raw.npy", allow_pickle=True)
+    if method == 'raw':
+
+        # dataset = np.load(f"{data_dir}/{subset}_dataset.npz", allow_pickle=True)
+        dataset = np.load(f"{data_dir}/{dataset_name}.npz", allow_pickle=True)
+        X_train = dataset['X_train']
+        y_train = dataset['y_train']
+        X_val = dataset['X_val']
+        y_val = dataset['y_val']
+        X_test = dataset['X_test']
+        y_test = dataset['y_test']
+        target_names = dataset['target_names']
 
         make_plots(
             config,
-            classifier,
+            target_label,
             X_train,
             y_train,
+            X_val,
+            y_val,
             X_test,
             y_test,
             target_names,
             dataset='raw',
+            dataset_name=dataset_name,
             method=method,
         )
 
 
     if method == 'tsfresh':
-        features = pd.read_csv('data/features_tsfresh.csv')
-        print("features shape: ", features.shape)
-        print("features columns: ", features.columns)
-        print("features head: ", features.head())
-
-        # get the features and labels
-        y_category = features['category'].values
-        y_class = features['class'].values
-        X = features.drop(['category', 'class'], axis=1).values
-
-        # merge the labels
-        category_label_encoder = LabelEncoder()
-        class_label_encoder = LabelEncoder()
-        y_category = category_label_encoder.fit_transform(y_category)
-        y_class = class_label_encoder.fit_transform(y_class)
-        category_target_names = category_label_encoder.classes_
-        class_target_names = class_label_encoder.classes_
-
-        smote = SMOTE()
+        # smote = SMOTE()
+        subset = None
         if task == 'identification':
-            target_names = category_target_names
-            X, y_category = smote.fit_resample(X, y_category)
-
-            # split the dataset into train and test
-            X_train, X_test, y_train, y_test = train_test_split(X, y_category, test_size=config['val_split'], random_state=config['seed'])
-
-
+            subset = 'category'
         elif task == 'detection':
-            target_names = class_target_names
-            X, y_class = smote.fit_resample(X, y_class)
-            # split the dataset into train and test
-            X_train, X_test, y_train, y_test = train_test_split(X, y_class, test_size=config['val_split'], random_state=config['seed'])
+            subset = 'class'
+
+        raw_dataset = np.load(f"{data_dir}/{subset}_dataset.npz", allow_pickle=True)
+
+        X_train = pd.read_csv(f"{data_dir}/{subset}_train_tsfresh.csv").values
+        y_train = raw_dataset['y_train']
+        X_val = pd.read_csv(f"{data_dir}/{subset}_val_tsfresh.csv").values
+        y_val = raw_dataset['y_val']
+        X_test = pd.read_csv(f"{data_dir}/{subset}_test_tsfresh.csv").values
+        y_test = raw_dataset['y_test']
+        target_names = raw_dataset['target_names']
+
+        # X_train = select_features(X_train, y_train)
+        # X_val = select_features(X_val, y_val)
+        # X_test = select_features(X_test, y_test)
+
 
         make_plots(
             config,
             classifier,
+            target_label,
             X_train,
             y_train,
+            X_val,
+            y_val,
             X_test,
             y_test,
             target_names,
-            dataset='features',
+            dataset='tsfresh',
+            dataset_name=dataset_name,
             method=method,
         )
 
@@ -397,22 +406,23 @@ def main():
         elif task == 'detection':
             subset = 'class'
 
-        X_train = np.load(f"data/X_{subset}_train_encoded.npy")
-        y_train = np.load(f"data/y_{subset}_train_encoded.npy")
-        X_test = np.load(f"data/X_{subset}_test_encoded.npy")
-        y_test = np.load(f"data/y_{subset}_test_encoded.npy")
+        X_train = np.load(f"{data_dir}/X_{subset}_train_encoded.npy")
+        y_train = np.load(f"{data_dir}/y_{subset}_train_encoded.npy")
+        X_test = np.load(f"{data_dir}/X_{subset}_test_encoded.npy")
+        y_test = np.load(f"{data_dir}/y_{subset}_test_encoded.npy")
 
-        target_names = np.load(f"data/{subset}_target_names_encoded.npy", allow_pickle=True)
+        target_names = np.load(f"{data_dir}/{subset}_target_names_encoded.npy", allow_pickle=True)
 
         make_plots(
             config,
-            classifier,
+            target_label,
             X_train,
             y_train,
             X_test,
             y_test,
             target_names,
             dataset='features',
+            dataset_name=dataset_name,
             method=method,
         )
 

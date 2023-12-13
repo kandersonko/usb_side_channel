@@ -2,6 +2,8 @@
 
 import os
 
+import numpy as np
+
 from sklearn.ensemble import RandomForestClassifier
 
 import torch
@@ -18,7 +20,8 @@ import wandb
 
 from models.autoencoders import Autoencoder
 from models.utils import evaluate_detection
-from dataset import extract_segments, SegmentedSignalDataModule, encode_dataset_in_batches, extract_features
+from dataset import extract_segments, SegmentedSignalDataModule
+from dataset import extract_features, get_dataloaders, encode_dataset_in_batches
 from config import default_config, merge_config_with_cli_args
 
 from callbacks import InputMonitor
@@ -41,11 +44,16 @@ def main():
 
     config = merge_config_with_cli_args(default_config)
 
-    wandb_logger = WandbLogger(project="usb_side_channel", log_model="all", config=config)
-    # wandb_logger = WandbLogger(project="usb_side_channel", config=config)
-    # wandb_logger.watch(model)
+    log = config.get('log', False)
 
-    # wandb.init(project='usb_side_channel', config=config)
+    logger = None
+    if log:
+        logger = WandbLogger(project="usb_side_channel", log_model="all", config=config)
+
+        # wandb_logger = WandbLogger(project="usb_side_channel", config=config)
+        # wandb_logger.watch(model)
+
+        # wandb.init(project='usb_side_channel', config=config)
 
     # # Update config dictionary with values from wandb.config if available
     # for key in config.keys():
@@ -55,22 +63,35 @@ def main():
     # seed everything
     pl.seed_everything(config['seed'])
 
-    data_module = SegmentedSignalDataModule(**config)
-    data_module.setup()
+    # get the data loaders
 
-    class_weights = data_module.class_weights
+    dataset_path = f"{config['data_dir']}/{config['target_label']}_dataset.npz"
+    dataset = np.load(dataset_path, allow_pickle=True)
+    X_train = dataset['X_train']
+    y_train = dataset['y_train']
+    X_val = dataset['X_val']
+    y_val = dataset['y_val']
+    X_test = dataset['X_test']
+    y_test = dataset['y_test']
+    target_names = dataset['target_names']
+
+    (train_loader, val_loader, test_loader), class_weights = get_dataloaders(
+        X_train, y_train, X_val, y_val, X_test, y_test,
+        num_workers=config['num_workers'],
+        batch_size=config['batch_size']
+    )
 
 
-    model = None
-    if config['use_class_weights']:
-        model = Autoencoder(**config, class_weights=class_weights)
+    model = Autoencoder(**config)
+    # if config['use_class_weights']:
+    #     model = Autoencoder(**config, class_weights=class_weights)
 
-        print("class weights: ", class_weights)
-    else:
-        model = Autoencoder(**config)
+    #     print("class weights: ", class_weights)
+    # else:
+    #     model = Autoencoder(**config)
+
     summary = ModelSummary(model, max_depth=-1)
 
-    print("class weights: ", class_weights)
     early_stopping = EarlyStopping(
         config['monitor_metric'], patience=config['early_stopping_patience'], verbose=False, mode='min', min_delta=0.0)
     learning_rate_monitor = LearningRateMonitor(
@@ -100,6 +121,7 @@ def main():
 
     torch.set_float32_matmul_precision('medium')
 
+
     trainer = pl.Trainer(
         # accumulate_grad_batches=config['ACCUMULATE_GRAD_BATCHES'],
         num_sanity_val_steps=0,
@@ -108,7 +130,7 @@ def main():
         accelerator="gpu",
         devices=-1,
         strategy='ddp',
-        logger=wandb_logger,
+        logger=logger,
         callbacks=callbacks,
         precision="32-true",
         # precision="16-mixed",
@@ -131,7 +153,7 @@ def main():
 
     # data_module = SegmentedSignalDataModule(batch_size=config['BATCH_SIZE'], val_split=config['VAL_SPLIT'])
 
-    trainer.fit(model, datamodule=data_module)
+    trainer.fit(model, train_loader, val_loader)
 
     # feature extraction
 
@@ -143,18 +165,6 @@ def main():
     model = Autoencoder.load_from_checkpoint(best_model_path)
     # model.load_state_dict(torch.load(best_model_path)['state_dict'])
 
-    if trainer.is_global_zero:
-        print("Setting up the dataset")
-
-    data_module = SegmentedSignalDataModule(**config)
-    data_module.setup()
-
-    if trainer.is_global_zero:
-        print("Extracting the segments")
-    # Extract segments and labels from the training dataset
-    X_train, y_train, X_test, y_test = extract_segments(data_module)
-
-    target_names = data_module.target_names
 
     if trainer.is_global_zero:
         print("Evaluating the model")
@@ -186,8 +196,12 @@ def main():
 
     if trainer.is_global_zero:
         print("Extracting features")
-    X_train_encoded, y_train, X_test_encoded, y_test = extract_features(
-        model, data_module)
+        X_train_encoded, y_train, X_val_encoded, y_val, X_test_encoded, y_test = extract_features(
+            model,
+            train_dataloader=train_loader,
+            val_dataloader=val_loader,
+            test_dataloader=test_loader,
+        )
 
     if trainer.is_global_zero:
         print("Training the classifier")
@@ -209,7 +223,8 @@ def main():
         print(report)
 
     # Close wandb run
-    wandb.finish()
+    if log:
+        wandb.finish()
 
 
 if __name__ == '__main__':
