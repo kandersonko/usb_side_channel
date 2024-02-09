@@ -18,9 +18,9 @@ from lightning.pytorch.cli import LightningCLI
 from lightning.pytorch.loggers import WandbLogger
 import wandb
 
-from models.autoencoders import Autoencoder
+from models.autoencoders import Autoencoder, PureAutoencoder
 from models.utils import evaluate_detection
-from dataset import extract_segments, SegmentedSignalDataModule
+from dataset import extract_segments, SegmentedSignalDataModule, to_dataloader
 from dataset import extract_features, get_dataloaders, encode_dataset_in_batches
 from config import default_config, merge_config_with_cli_args
 
@@ -63,32 +63,19 @@ def main():
     # seed everything
     pl.seed_everything(config['seed'])
 
+    # the training dataset
+    train_dataset_path = f"{config['data_dir']}/common_dataset.npz"
+    training_dataset = np.load(train_dataset_path, allow_pickle=True)
+    X_train = training_dataset['X_train']
+    X_val = training_dataset['X_val']
     # get the data loaders
+    train_loader = to_dataloader(X_train, X_train, batch_size=config['batch_size'],
+                                 num_workers=config['num_workers'], shuffle=True)
+    val_loader = to_dataloader(X_val, X_val, batch_size=config['batch_size'],
+                                 num_workers=config['num_workers'], shuffle=False)
 
-    dataset_path = f"{config['data_dir']}/{config['target_label']}_dataset.npz"
-    dataset = np.load(dataset_path, allow_pickle=True)
-    X_train = dataset['X_train']
-    y_train = dataset['y_train']
-    X_val = dataset['X_val']
-    y_val = dataset['y_val']
-    X_test = dataset['X_test']
-    y_test = dataset['y_test']
-    target_names = dataset['target_names']
-
-    (train_loader, val_loader, test_loader), class_weights = get_dataloaders(
-        X_train, y_train, X_val, y_val, X_test, y_test,
-        num_workers=config['num_workers'],
-        batch_size=config['batch_size']
-    )
-
-
-    model = Autoencoder(**config)
-    # if config['use_class_weights']:
-    #     model = Autoencoder(**config, class_weights=class_weights)
-
-    #     print("class weights: ", class_weights)
-    # else:
-    #     model = Autoencoder(**config)
+    # model = Autoencoder(**config)
+    model = PureAutoencoder(**config)
 
     summary = ModelSummary(model, max_depth=-1)
 
@@ -103,7 +90,7 @@ def main():
         # or another metric such as 'val_accuracy'
         monitor=config['monitor_metric'],
         dirpath=config['checkpoint_path'],
-        filename='best_model-{epoch:02d}-{val_loss:.2f}-{val_acc:.2f}',
+        filename='new_model-{epoch:02d}-{val_loss:.2f}',
         save_top_k=1,
         mode='min',  # 'min' for loss and 'max' for accuracy
     )
@@ -162,13 +149,34 @@ def main():
 
     # Load the best model
     best_model_path = checkpoint_callback.best_model_path
-    model = Autoencoder.load_from_checkpoint(best_model_path)
+    model = PureAutoencoder.load_from_checkpoint(best_model_path)
     # model.load_state_dict(torch.load(best_model_path)['state_dict'])
 
 
     if trainer.is_global_zero:
+        print("\nFinished training\n\n")
         print("Evaluating the model")
+        print("Best model path: ", best_model_path)
+        print("Dataset: ", config['dataset'])
+        print("Target label: ", config['target_label'])
 
+
+    # the evaluation dataset
+    dataset_path = f"{config['data_dir']}/{config['dataset']}-{config['target_label']}.npz"
+    dataset = np.load(dataset_path, allow_pickle=True)
+    X_train = dataset['X_train']
+    y_train = dataset['y_train']
+    X_val = dataset['X_val']
+    y_val = dataset['y_val']
+    X_test = dataset['X_test']
+    y_test = dataset['y_test']
+    target_names = dataset['target_names']
+
+    (train_loader, val_loader, test_loader), class_weights = get_dataloaders(
+        X_train, y_train, X_val, y_val, X_test, y_test,
+        num_workers=config['num_workers'],
+        batch_size=config['batch_size']
+    )
     # Determine the process rank using the environment variable
     if trainer.is_global_zero:
         # training a random forest classifier without feature extraction
@@ -204,6 +212,7 @@ def main():
         )
 
     if trainer.is_global_zero:
+        print("dataset shape: ", X_train_encoded.shape, y_train.shape)
         print("Training the classifier")
 
     if trainer.is_global_zero:

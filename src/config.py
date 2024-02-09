@@ -27,7 +27,7 @@ def merge_config_with_cli_args(config):
     num_workers = cpu_count() // 2
 
     parser.add_argument('--seed', type=int, default=42)
-    parser.add_argument('--batch_size', type=int, default=512)
+    parser.add_argument('--batch_size', type=int, default=32)
     parser.add_argument('--val_split', type=float, default=0.1)
     parser.add_argument('--bottleneck_dim', type=int, default=32)
     parser.add_argument('--max_epochs', type=int, default=100)
@@ -42,7 +42,7 @@ def merge_config_with_cli_args(config):
     parser.add_argument('--conv1_out_channels', type=int, default=64)
     parser.add_argument('--conv2_out_channels', type=int, default=128)
     # add segment overlap
-    parser.add_argument('--overlap', type=float, default=0.75)
+    parser.add_argument('--overlap', type=float, default=0.0)
     # add sequence length
     parser.add_argument('--sequence_length', type=int, default=10000)
     # add dropout
@@ -72,6 +72,12 @@ def merge_config_with_cli_args(config):
     # add dataset path
     parser.add_argument('--dataset_path', type=str,
                         default='data/datasets.pkl')
+
+    # add max_samples_per_class
+    parser.add_argument('--max_samples_per_class', type=int, default=1000)
+
+    # add kfold
+    parser.add_argument('--kfold', type=int, default=10)
 
     # data_dir for saving the dataset
     parser.add_argument('--data_dir', type=str, default='datasets')

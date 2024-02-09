@@ -15,9 +15,10 @@ from lightning.pytorch.utilities.model_summary import ModelSummary
 from lightning.pytorch.cli import LightningCLI
 from lightning.pytorch.loggers import WandbLogger
 
-from models.autoencoders import Autoencoder
+from models.autoencoders import Autoencoder, PureAutoencoder
 from models.utils import evaluate_detection
 from dataset import extract_segments, SegmentedSignalDataModule, encode_dataset_in_batches, extract_features, setup_dataset
+from dataset import to_dataloader
 
 from config import default_config, merge_config_with_cli_args
 
@@ -34,121 +35,78 @@ def main():
     if config['model_path'] is None:
         raise ValueError("Provide a model path")
 
-    task = config.get('task', None)
-    if task is None:
-        raise ValueError("Provide a task (identification or detection))")
-    # config['batch_size'] = 512
-
-
     pl.seed_everything(config['seed'], workers=True)
 
     # plot data
     plot_data = []
 
-
-
-
-    if task == "identification":
-        config['target_label'] = "category"
-        config['num_classes'] = 5
-        title = 'Identification'
-    elif task == "detection":
-        config['target_label'] = "class"
-        config['num_classes'] = 2
-        title = 'Anomaly Detection'
-    else:
-        raise ValueError("Provide a valid task")
-
-    # measure time for data setup
-    start_time = time.time()
-
-    print("Setting up the dataset")
-    # use the setup_dataset function
-    signals, labels, target_names = setup_dataset(**config)
-    # convert to tensors
-    signals = torch.from_numpy(signals).float()
-    labels = torch.from_numpy(labels).long()
-    # create data loaders
-    dataset = TensorDataset(signals, labels)
-    train_dataset, val_dataset = random_split(dataset, [int(len(dataset) * (1 - config['val_split'])), int(len(dataset) * config['val_split'])])
-    train_dataloader = DataLoader(train_dataset, batch_size=config['batch_size'], shuffle=True, num_workers=config['num_workers'])
-    val_dataloader = DataLoader(val_dataset, batch_size=config['batch_size'], shuffle=False, num_workers=config['num_workers'])
-
-
-    end_time = time.time()
-    duration = end_time - start_time
-    plot_data.append({'name': 'dataset', 'task': 'setup', 'dataset': 'all', 'duration': duration})
-
-    # extract semgnets
-    data_module = SegmentedSignalDataModule(**config)
-    data_module.setup()
-    X_train, y_train, X_test, y_test = extract_segments(data_module)
-
     print("Setting up the model")
 
-    # best_model_path = checkpoint_callback.best_model_path
-    # best_model_path = 'best_models/best_model-epoch=16-val_loss=0.36.ckpt'
-    # best_model_path = 'best_models/best_model-epoch=49-val_loss=0.11.ckpt'
     best_model_path = config['model_path']
 
     model = None
     if config['model_path'] is not None and config['model_path'] != '':
-        model = Autoencoder.load_from_checkpoint(best_model_path)
+        model = PureAutoencoder.load_from_checkpoint(best_model_path)
     else:
-        if config['use_class_weights']:
-            model = Autoencoder(**config, class_weights=data_module.class_weights)
-        else:
-            model = Autoencoder(**config)
-    # model = Autoencoder.load_from_checkpoint(best_model_path)
+        raise ValueError("Provide a model path")
+
     summary = ModelSummary(model, max_depth=-1)
     print(model)
     print(summary)
 
-    # model.load_state_dict(torch.load(best_model_path)['state_dict'])
+    data_dir = config['data_dir']
 
-
-    end_time = time.time()
-    duration = end_time - start_time
-    plot_data.append({"name": "dataset", "task": "extract segments", 'dataset': 'all', "duration": duration})
-
-    raw_target_names = data_module.target_names
-
-    # save the segments and labels dataset to disk to the data/ folder
-    # using numpy
+    print("Loading the dataset")
     target_label = config['target_label']
-    np.save(f"data/X_{target_label}_train_raw.npy", X_train)
-    np.save(f"data/y_{target_label}_train_raw.npy", y_train)
-    np.save(f"data/X_{target_label}_test_raw.npy", X_test)
-    np.save(f"data/y_{target_label}_test_raw.npy", y_test)
-    # save the target names
-    np.save(f"data/{target_label}_target_names_raw.npy", raw_target_names)
+    dataset_name = config['dataset']
+    dataset = np.load(f"{data_dir}/{dataset_name}-{target_label}.npz", allow_pickle=True)
+    X_train = dataset['X_train']
+    y_train = dataset['y_train']
+    X_val = dataset['X_val']
+    y_val = dataset['y_val']
+    X_test = dataset['X_test']
+    y_test = dataset['y_test']
+    target_names = dataset['target_names']
 
 
+    train_loader = to_dataloader(X_train, y_train, batch_size=config['batch_size'],
+                                    num_workers=config['num_workers'], shuffle=True)
+    val_loader = to_dataloader(X_val, y_val, batch_size=config['batch_size'],
+                                    num_workers=config['num_workers'], shuffle=False)
+    test_loader = to_dataloader(X_test, y_test, batch_size=config['batch_size'],
+                                    num_workers=config['num_workers'], shuffle=False)
 
     print("Extracting features")
     start_time = time.time()
-    X_train_encoded, y_train, X_test_encoded, y_test = extract_features(
+
+    X_train_encoded, y_train, X_val_encoded, y_val, X_test_encoded, y_test = extract_features(
         model,
-        train_dataloader=train_dataloader,
-        val_dataloader=val_dataloader,
+        train_dataloader=train_loader,
+        val_dataloader=val_loader,
+        test_dataloader=test_loader,
     )
+
     end_time = time.time()
     duration = end_time - start_time
-    plot_data.append({"name": "autoencoder", "task": "extract features", "dataset": "all", "duration": duration})
+    plot_data.append({"name": "autoencoder", "task": "extract features", "dataset": f"{dataset_name}-{target_label}", "duration": duration})
     # save the plot data
     plot_data = pd.DataFrame(plot_data)
-    plot_data.to_csv('data/feature_extraction_plot_data.csv')
+    plot_data.to_csv('measurements/{dataset}-{subset}-autoencoder-feature-extraction-duration.csv')
 
+    data_dir = config['data_dir']
 
     # save the extracted features
     print("Saving the features")
-    target_label = config['target_label']
-    np.save(f"data/X_{target_label}_train_encoded.npy", X_train_encoded)
-    np.save(f"data/y_{target_label}_train_encoded.npy", y_train)
-    np.save(f"data/X_{target_label}_test_encoded.npy", X_test_encoded)
-    np.save(f"data/y_{target_label}_test_encoded.npy", y_test)
-    np.save(f"data/{target_label}_target_names_encoded.npy", target_names)
-
+    np.savez_compressed(
+        f"{data_dir}/{dataset_name}-{target_label}_features.npz",
+        X_train=X_train_encoded,
+        y_train=y_train,
+        X_val=X_val_encoded,
+        y_val=y_val,
+        X_test=X_test_encoded,
+        y_test=y_test,
+        target_names=target_names,
+    )
 
 
 

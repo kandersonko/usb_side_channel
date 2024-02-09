@@ -22,6 +22,16 @@ from config import default_config as config
 from torch.utils.data import DataLoader
 from torch.nn import DataParallel
 
+def to_dataloader(X, y, batch_size, num_workers, shuffle=False, sampler=None):
+    X = torch.tensor(X, dtype=torch.float32)
+    y = torch.tensor(y, dtype=torch.long)
+
+    dataset = TensorDataset(X, y)
+
+    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers, sampler=sampler)
+
+    return dataloader
+
 def get_dataloaders(X_train, y_train, X_val, y_val, X_test, y_test, batch_size, num_workers):
     X_train = torch.tensor(X_train, dtype=torch.float32)
     y_train = torch.tensor(y_train, dtype=torch.long)

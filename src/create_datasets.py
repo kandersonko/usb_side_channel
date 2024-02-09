@@ -12,7 +12,7 @@ from utils.data import load_data
 from dataset import segment_dataset
 
 
-def save_dataset(dataset, dataset_name, target_label, config):
+def save_dataset(dataset, dataset_name, target_label, config, common_data):
 
         # seed everything
         pl.seed_everything(config['seed'])
@@ -20,19 +20,48 @@ def save_dataset(dataset, dataset_name, target_label, config):
         # prepare the features and labels
         features = np.stack(dataset.data.values)
         labels = dataset[target_label].to_numpy()
-
+        # print("Dataset shape:", features.shape, labels.shape)
 
         # encode the labels
         label_encoder = LabelEncoder()
         labels = label_encoder.fit_transform(labels)
         target_names = label_encoder.classes_
 
+        # Initialize lists to hold the sampled features and labels
+        sampled_features = []
+        sampled_labels = []
+
+        # Iterate over each class and sample 1000 features
+        for class_idx in np.unique(labels):
+                class_features = features[labels == class_idx]
+                class_labels = labels[labels == class_idx]
+
+                # Randomly sample 1000 instances or all if less than 1000
+                n_samples = min(config['max_samples_per_class'], class_features.shape[0])
+                sampled_idx = np.random.choice(class_features.shape[0], n_samples, replace=False)
+
+                sampled_features.append(class_features[sampled_idx])
+                sampled_labels.append(class_labels[sampled_idx])
+
+        # Combine the sampled features and labels
+        features = np.vstack(sampled_features)
+        labels = np.concatenate(sampled_labels)
+
+        print("Dataset shape:", features.shape, labels.shape)
+
+        print("Segmenting the dataset")
         # segment the dataset to 10k length signals
-        features, labels = segment_dataset(features, labels, window_size=10000, overlap=0.0)
+        features, labels = segment_dataset(features, labels, window_size=config['sequence_length'], overlap=config['overlap'])
         features = np.vstack(features)
         labels = np.vstack(labels).reshape(-1)
 
+        print("Dataset shape:", features.shape, labels.shape)
+        print(np.unique(labels, return_counts=True))
+
         num_classes = len(target_names)
+
+        print("Number of classes:", num_classes)
+        print("Number of unique labels:", len(np.unique(labels)))
 
         # split the dataset into train, val and test
         X_train, X_test, y_train, y_test = train_test_split(
@@ -49,6 +78,9 @@ def save_dataset(dataset, dataset_name, target_label, config):
             X_train, y_train, test_size=config['val_split'], random_state=config['seed'],
             stratify=y_train,
         )
+
+        common_data['X_train'].append(X_train)
+        common_data['X_val'].append(X_val)
 
         # save the dataset to disk
         np.savez_compressed(
@@ -84,6 +116,8 @@ def main():
     # select only idle state
     data = data[data['state'] == 'idle']
 
+    common_data = dict(X_train=[], X_val=[])
+
     # Dataset A
     # characteristics:
     #   Identification task: device categories (keyboard, mouse, etc.),
@@ -95,7 +129,7 @@ def main():
     flash_drive = data[data['device'] == 'sandisk_1']
     cable = data[data['device'] == 'HD']
     dataset_a = pd.concat([keyboard_and_mouse, flash_drive, cable])
-    save_dataset(dataset_a, 'dataset_a', 'category', config)
+    save_dataset(dataset_a, 'dataset_a', 'category', config, common_data)
 
     # Dataset B
     # characteristics:
@@ -110,7 +144,7 @@ def main():
     sandisk = dataset_b[dataset_b['device'] == 'sandisk_1']
     mosdat = dataset_b[dataset_b['device'] == 'mosdat']
     dataset_b = pd.concat([lexar, pny, sandisk, mosdat])
-    save_dataset(dataset_b, 'dataset_b', 'device', config)
+    save_dataset(dataset_b, 'dataset_b', 'device', config, common_data)
 
     # Dataset C1
     # characteristics:
@@ -120,7 +154,7 @@ def main():
     category = 'flash_drive'
     brand = 'pny'
     dataset_c1 = data[(data['category'] == category) & (data['brand'] == brand)]
-    save_dataset(dataset_c1, 'dataset_c1', 'device', config)
+    save_dataset(dataset_c1, 'dataset_c1', 'device', config, common_data)
 
     # Dataset C2
     # characteristics:
@@ -130,7 +164,7 @@ def main():
     category = 'keyboard'
     brand = 'dell'
     dataset_c2 = data[(data['category'] == category) & (data['brand'] == brand)]
-    save_dataset(dataset_c2, 'dataset_c2', 'device', config)
+    save_dataset(dataset_c2, 'dataset_c2', 'device', config, common_data)
 
     # Dataset D1
     # characteristics:
@@ -142,8 +176,10 @@ def main():
     perixx = dataset_d1[dataset_d1['device'] == 'perixx']
     lenovo = dataset_d1[dataset_d1['device'] == 'lenovo']
     teensyduino = dataset_d1[dataset_d1['device'] == 'teensyduino']
+    # take 10 samples from teensyduino
+    teensyduino = teensyduino.sample(n=10, random_state=seed)
     dataset_d1 = pd.concat([dell, perixx, lenovo, teensyduino])
-    save_dataset(dataset_d1, 'dataset_d1', 'device', config)
+    save_dataset(dataset_d1, 'dataset_d1', 'device', config, common_data)
 
     # Dataset D2
     # characteristics:
@@ -153,8 +189,14 @@ def main():
     dataset_d2 = data[data['category'] == 'cable']
     dataset_d2 = dataset_d2[dataset_d2['device'] != 'WH']
     dataset_d2 = dataset_d2[dataset_d2['device'] != 'J-B']
-    save_dataset(dataset_d2, 'dataset_d2', 'device', config)
+    save_dataset(dataset_d2, 'dataset_d2', 'device', config, common_data)
 
+    # save the common data
+    np.savez_compressed(
+        os.path.join(config['data_dir'], f'common_dataset.npz'),
+        X_train=np.vstack(common_data['X_train']),
+        X_val=np.vstack(common_data['X_val']),
+    )
 
 
 if __name__ == '__main__':

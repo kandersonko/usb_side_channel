@@ -10,13 +10,18 @@ from utils.data import load_data, preprocess_features
 
 import matplotlib.pyplot as plt
 
+
 import datetime
+
+import lightning.pytorch as pl
 
 #from imblearn.under_sampling import RandomUnderSampler
 
 from tsfresh import extract_features, extract_relevant_features, select_features
 from tsfresh.utilities.distribution import MultiprocessingDistributor
 from tsfresh.feature_extraction import feature_calculators, settings
+
+from tsfresh.feature_selection.relevance import calculate_relevance_table
 
 from tsfresh.utilities.distribution import ClusterDaskDistributor
 from tsfresh.convenience.bindings import dask_feature_extraction_on_chunk
@@ -37,9 +42,21 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
 from sklearn.model_selection import cross_val_score
 from sklearn.metrics import accuracy_score, classification_report
+from config import default_config, merge_config_with_cli_args
 
 
-def main(dataset_path):
+def feature_engineering(X, y, target_label, output_file, dataset, subset):
+    print("X shape:", X.shape)
+    print("y shape:", y.shape)
+
+    ids = np.repeat(np.arange(X.shape[0]), X.shape[1])
+    times = np.tile(np.arange(X.shape[1]), X.shape[0])
+    values = X.flatten()  # Flatten X to get a single long list of values
+
+    # Create a DataFrame suitable for tsfresh
+    df = pd.DataFrame({'id': ids, 'time': times, 'value': values})
+    data = dd.from_pandas(df, npartitions=10)
+    print(df.head())
 
     # dask.config.set({'distributed.scheduler.allowed-failures': 50})
     # dask.config.set({'distributed.scheduler.worker-ttl': None})
@@ -63,41 +80,6 @@ def main(dataset_path):
 
     cluster.scale(100)
 
-    # load the dataset
-    data_path = Path(dataset_path)
-    data = dd.from_pandas(load_data(dataset_path), npartitions=10)
-
-    # preprocess the features
-    data['data'] = data['data'].map(lambda x: x[:len(x)-4])
-    data['class'] = 'normal'
-    data['class'] = data['class'].mask(data['brand'] == 'OMG', 'anomaly')
-    data['class'] = data['class'].mask(data['brand'] == 'teensyduino', 'anomaly')
-    data = data.persist()
-    data['id'] = data.index
-    y_category = data['category']
-    y_category = y_category.compute()
-    y_class = data['class']
-    y_class = y_class.compute()
-    data = data.explode('data')
-    data['time'] = data.groupby('id').cumcount()
-    data = data.rename(columns={'data': 'value'})
-
-    print(client)
-    print("y category shape: ", y_category.shape)
-    print("y class shape: ", y_class.shape)
-    print(data.head())
-
-    data['value'] = data['value'].astype(np.float32)
-    X = data[['id', 'time', 'class', 'value']].copy()
-    X = X.rename(columns={"device": "kind"})
-    # X = X.drop(columns=["class"])
-
-    # extract features using tsfresh with dask
-
-    # X_features = X.groupby(["id", "kind"])
-    # X = X.compute()
-    X_features = X.compute()
-
     plot_data = []
 
     start_time = time.time()
@@ -107,7 +89,7 @@ def main(dataset_path):
     print("Extracting features")
 
     features = extract_features(
-        X_features,
+        data.compute(),
         column_id="id",
         column_sort="time",
         column_value="value",
@@ -116,23 +98,34 @@ def main(dataset_path):
         disable_progressbar=True,
     )
 
-    # features = dask_feature_extraction_on_chunk(
-    #     X,
-    #     column_id="id",
-    #     column_kind="kind",
-    #     column_sort="time",
-    #     column_value="value",
-    #     disable_progressbar=True,
-    # )
+    print("features shape:", features.shape)
 
-    impute(features)
+
+    imputed_features = impute(features)
+    print("imputed_features shape:", imputed_features.shape)
 
     # select relevant features
-    features.fillna(0, inplace=True)
+    # features.fillna(0, inplace=True)
 
-    # transform the labels to numpy arrays
-    features_filtered = select_features(features, y_category)
-    # features_filtered = features_filtered.compute()
+    selected_features = select_features(imputed_features, y)
+    print("selected_features shape:", selected_features.shape)
+
+    y_series = pd.Series(y, index=selected_features.index)
+
+    relevance_table = calculate_relevance_table(selected_features, y_series)
+    relevance_table = relevance_table[relevance_table.relevant]
+
+    # Sort the relevance table
+    relevance_table_sorted = relevance_table.sort_values(by='p_value')
+
+    # Select the top k features
+    k = 180  # Number of features to keep
+    top_features = relevance_table_sorted.head(k)['feature'].values
+
+    # Filter the extracted features to keep only the top k features
+    features_filtered = selected_features[top_features]
+
+    print("features_filtered shape:", features_filtered.shape)
 
     end_time = time.time()
     duration = end_time - start_time
@@ -140,15 +133,34 @@ def main(dataset_path):
     plot_data.append({"name": "tsfresh", "task": "feature engineering", "dataset": "all", "duration": duration})
     # save the plot data
     plot_data = pd.DataFrame(plot_data)
-    plot_data.to_csv('data/feature_engineering_plot_data.csv')
+    plot_data.to_csv('measurements/{dataset}-{subset}-tsfresh-feature-engineering-duration.csv')
 
     print(features_filtered.head())
 
     # save the features with the labels concatenated
-    features_filtered['class'] = y_class
-    features_filtered['category'] = y_category
-    features_filtered.to_csv('data/features_tsfresh.csv')
+    features_filtered[target_label] = y_series.loc[features_filtered.index]
+    features_filtered.to_csv(output_file, index=False)
 
+
+
+def main():
+    config = merge_config_with_cli_args(default_config)
+
+    pl.seed_everything(config['seed'], workers=True)
+
+    target_label = config['target_label']
+    dataset_name = config['dataset']
+    data_dir = config['data_dir']
+    dataset_subset = config['subset']
+    if dataset_subset not in ['train', 'val', 'test']:
+        raise ValueError(f"Invalid subset: {dataset_subset}. Must be one of 'train', 'val', or 'test'.")
+
+    dataset = np.load(f"{data_dir}/{dataset_name}-{target_label}.npz", allow_pickle=True)
+    X_train = dataset[f'X_{dataset_subset}']
+    y_train = dataset[f'y_{dataset_subset}']
+    target_names = dataset['target_names']
+
+    feature_engineering(X=X_train, y=y_train, target_label=target_label, output_file=f"{data_dir}/{dataset_name}-{target_label}-{dataset_subset}_tsfresh.csv", dataset=dataset_name, subset=dataset_subset)
 
 if __name__ == '__main__':
-    main(dataset_path='data/datasets.pkl')
+    main()

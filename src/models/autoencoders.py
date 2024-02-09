@@ -10,9 +10,99 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 import lightning.pytorch as pl
 
-from einops.layers.torch import Rearrange
+# from einops.layers.torch import Rearrange
 
 from config import default_config as config
+
+class PureAutoencoder(pl.LightningModule):
+    def __init__(
+            self,
+            bottleneck_dim,
+            batch_size,
+            learning_rate,
+            sequence_length,
+            learning_rate_patience,
+            conv1_out_channels,
+            conv2_out_channels,
+            num_lstm_layers,
+            dropout,
+            monitor_metric,
+            **kwargs,
+    ):
+        super().__init__()
+
+        # save all hyperparameters
+        self.save_hyperparameters()
+
+        self.learning_rate = learning_rate
+        self.learning_rate_patience = learning_rate_patience
+        self.dropout = dropout
+        self.monitor = monitor_metric
+        self.bottleneck_dim = bottleneck_dim
+        self.batch_size = batch_size
+
+
+        # conv1d expects (batch, channels, seq_len)
+        self.example_input_array = torch.rand(self.batch_size, sequence_length)
+
+
+        self.encoder = CNNLSTMEncoder(
+            sequence_length=sequence_length,
+            num_features=1,
+            hidden_size=bottleneck_dim,
+            conv1_out_channels=conv1_out_channels,
+            conv2_out_channels=conv2_out_channels,
+            num_layers=num_lstm_layers,
+            dropout=dropout,
+        )
+
+        self.decoder = CNNLSTMDecoder(
+            sequence_length=sequence_length,
+            hidden_size=bottleneck_dim,
+            num_layers=num_lstm_layers,
+            conv1_out_channels=conv2_out_channels, # we reverse the channels
+            conv2_out_channels=conv1_out_channels,
+            dropout=dropout,
+        )
+
+        # Loss Functions
+        self.reconstruction_loss_fn = nn.MSELoss()
+
+
+    def forward(self, x):
+        # import pdb; pdb.set_trace()
+        encoded = self.encoder(x)
+        decoded = self.decoder(encoded)
+        return decoded
+
+    def training_step(self, batch, batch_idx):
+        x, _ = batch
+        x_hat = self.forward(x)
+
+        # Compute losses
+        total_loss = self.reconstruction_loss_fn(x_hat, x)
+
+        self.log('train_loss', total_loss, sync_dist=True, prog_bar=True)
+        return total_loss
+
+
+    def validation_step(self, batch, batch_idx):
+        x, _ = batch
+        x_hat = self.forward(x)
+        total_loss = self.reconstruction_loss_fn(x_hat, x)
+
+        self.log('val_loss', total_loss, sync_dist=True, prog_bar=True)
+
+    def configure_optimizers(self):
+        optimizer = torch.optim.Adam(self.parameters(), lr=self.learning_rate)
+        monitor = self.monitor
+        scheduler = {
+            'scheduler': ReduceLROnPlateau(optimizer, patience=self.learning_rate_patience, verbose=False),
+            'interval': 'epoch',  # or 'step'
+            'frequency': 1,
+            'monitor': monitor,  # Name of the metric to monitor
+        }
+        return [optimizer], [scheduler]
 
 
 class Autoencoder(pl.LightningModule):

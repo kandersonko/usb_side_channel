@@ -182,6 +182,9 @@ lightning_logs/
 best_models/
 USB/
 
+measurements/
+results/
+
 # wandb
 *.swp
 .python-version
@@ -202,3 +205,4 @@ slurm-*
 
 # ignore results
 results/
+src/results/
