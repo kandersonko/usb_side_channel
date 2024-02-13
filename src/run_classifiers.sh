@@ -2,6 +2,7 @@
 
 # list of classifiers
 # classifiers=("random_forest" "SVC" "KNN" "gradient_boosting" "decision_tree" "lstm")
+# classifiers=("random_forest" "SVC" "KNN" "gradient_boosting" "decision_tree")
 classifiers=("lstm")
 
 # list of datasets
@@ -9,7 +10,12 @@ classifiers=("lstm")
 datasets=("dataset_a")
 
 # methods=("raw" "encoder" "tsfresh")
-methods=("tsfresh")
+methods=("raw")
+
+folds=10
+
+# conv1_out_channels: 64
+# conv2_out_channels: 128
 
 for method in "${methods[@]}"; do
     for classifier in "${classifiers[@]}"; do
@@ -24,7 +30,10 @@ for method in "${methods[@]}"; do
             echo "=============================================="
             echo "=============================================="
             echo "Running classifier $classifier on dataset $dataset with target label $target_label using method $method"
-            python classifier.py --task=identification --method=$method --dataset=$dataset --target_label=$target_label --classifier=$classifier --batch_size=8
+            python classifier.py --task=identification --method=$method --dataset=$dataset --target_label=$target_label --classifier=$classifier --batch_size=8 --kfold=$folds --conv1_out_channels=32 --conv2_out_channels=64 --max_epochs=10
         done
     done
 done
+
+# create tables
+# python create_tables.py -i results

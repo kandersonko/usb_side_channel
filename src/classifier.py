@@ -5,6 +5,9 @@ import time
 
 from tqdm import tqdm
 
+from lightning.pytorch.loggers import WandbLogger
+import wandb
+
 from tsfresh import select_features
 
 import torch
@@ -39,7 +42,7 @@ from sklearn.preprocessing import LabelEncoder
 
 from imblearn.over_sampling import SMOTE
 
-from models.classifiers import LSTMClassifier
+from models.classifiers import LSTMClassifier, PyTorchClassifierWrapper
 from config import default_config, merge_config_with_cli_args
 
 from dataset import compute_class_weights
@@ -183,8 +186,7 @@ def train_lstm(config, X_train, y_train, X_val, y_val, X_test, y_test, task, cla
                 accelerator="gpu",
                 devices=-1,
                 strategy='ddp',
-                # logger=wandb_logger,
-                logger=TensorBoardLogger("lightning_logs", name="lstm"),
+                logger=config['logger'],
                 callbacks=callbacks,
                 precision="32-true",
                 # precision="16-mixed",
@@ -206,28 +208,118 @@ def train_lstm(config, X_train, y_train, X_val, y_val, X_test, y_test, task, cla
         return classifier, test_dataloader
 
 
+def evaluate_lstm(X_train, y_train, X_val, y_val, config, fold):
+    config['sequence_length'] = X_train.shape[1]
+    classifier = LSTMClassifier(**config)
+
+    dataset_name = config['dataset']
+
+    X_train = torch.tensor(X_train, dtype=torch.float32)
+    y_train = torch.tensor(y_train, dtype=torch.long)
+    X_val = torch.tensor(X_val, dtype=torch.float32)
+    y_val = torch.tensor(y_val, dtype=torch.long)
+
+    print("X_train shape: ", X_train.shape)
+    print("y_train shape: ", y_train.shape)
+    print("X_val shape: ", X_val.shape)
+    print("y_val shape: ", y_val.shape)
 
 
-def get_predictions(classifier, X, y, model_type, config):
+    train_dataset = TensorDataset(X_train, y_train)
+    val_dataset = TensorDataset(X_val, y_val)
+
+    class_counts = torch.bincount(y_train)
+    class_weights = 1. / class_counts
+    samples_weights = class_weights[y_train]
+
+    # Create the sampler
+    sampler = WeightedRandomSampler(samples_weights, len(samples_weights))
+
+    train_dataloader = DataLoader(train_dataset, batch_size=config['batch_size'], shuffle=False, num_workers=config['num_workers'], sampler=sampler)
+    val_dataloader = DataLoader(val_dataset, batch_size=config['batch_size'], shuffle=False, num_workers=config['num_workers'])
+
+    # X_test = X_test.cuda()
+    # y_test = y_test.cuda()
+
+    early_stopping = EarlyStopping(
+        config['monitor_metric'], patience=config['early_stopping_patience'], verbose=False, mode='min', min_delta=0.0)
+    learning_rate_monitor = LearningRateMonitor(
+        logging_interval='epoch', log_momentum=True)
+    learning_rate_finder = LearningRateFinder()
+
+    checkpoint_callback = ModelCheckpoint(
+        # or another metric such as 'val_accuracy'
+        monitor=config['monitor_metric'],
+        dirpath='./checkpoints',
+        filename='classifier-' + f"{dataset_name}-{fold}" +'-{epoch:02d}-{val_loss:.2f}-{val_acc:.2f}',
+        save_top_k=1,
+        mode='min',  # 'min' for loss and 'max' for accuracy
+    )
+    callbacks = [
+        early_stopping,
+        learning_rate_monitor,
+        checkpoint_callback,
+        learning_rate_finder,
+    ]
+    torch.set_float32_matmul_precision('medium')
+    trainer = pl.Trainer(
+        # accumulate_grad_batches=config['ACCUMULATE_GRAD_BATCHES'],
+        log_every_n_steps=4,
+        num_sanity_val_steps=0,
+        max_epochs=config['max_epochs'],
+        min_epochs=config['min_epochs'],
+        accelerator="gpu",
+        devices=-1,
+        strategy='ddp',
+        logger=config['logger'],
+        callbacks=callbacks,
+        precision="32-true",
+        # precision="16-mixed",
+        # precision=32,
+        # default_root_dir=config['CHECKPOINT_PATH'],
+    )
+
+    trainer.fit(classifier, train_dataloader, val_dataloader)
+
+
+    classifier = LSTMClassifier.load_from_checkpoint(checkpoint_callback.best_model_path)
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    classifier = classifier.to(device)
+
+
+    return classifier, val_dataloader
+
+
+
+
+def get_predictions(classifier, X, y, config, model="ml"):
     # Define 10-fold cross-validation
     kfold = StratifiedKFold(n_splits=config['kfold'], shuffle=True, random_state=config['seed'])
+
+    # if model == "dl":
+        # create tensor from the numpy array
+        # X = torch.tensor(X, dtype=torch.float32)
+        # y = torch.tensor(y, dtype=torch.long)
+        # move the data to the gpu
+        # device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
+        # X = X.to(device)
+        # y = y.to(device)
 
     y_pred = None
     y_prob = None  # Initialize y_prob
 
-    if model_type == 'ml':
-        # Perform cross-validation and get predictions
-        y_pred = cross_val_predict(classifier, X, y, cv=kfold, method='predict')
+    # Perform cross-validation and get predictions
+    y_pred = cross_val_predict(classifier, X, y, cv=kfold, method='predict', verbose=3, n_jobs=-1)
+    # y_pred = cross_val_predict(classifier, X, y, cv=kfold, method='predict', verbose=2)
 
-        # For models that have a decision_function or predict_proba method, use one of them to get probabilities
-        if hasattr(classifier, "predict_proba"):
-            y_prob = cross_val_predict(classifier, X, y, cv=kfold, method='predict_proba') # Get probabilities for the positive class
-        elif hasattr(classifier, "decision_function"):
-            y_prob = cross_val_predict(classifier, X, y, cv=kfold, method='decision_function')
-        else:
-            raise ValueError("Classifier does not support probability predictions.")
+    # For models that have a decision_function or predict_proba method, use one of them to get probabilities
+    if hasattr(classifier, "predict_proba"):
+        y_prob = cross_val_predict(classifier, X, y, cv=kfold, method='predict_proba') # Get probabilities for the positive class
+    elif hasattr(classifier, "decision_function"):
+        y_prob = cross_val_predict(classifier, X, y, cv=kfold, method='decision_function')
     else:
-        raise ValueError("Other models are not supported yet")
+        raise ValueError("Classifier does not support probability predictions.")
 
     return y_pred, y_prob
 
@@ -238,6 +330,9 @@ def k_fold_cross_validation(model, X, y, config, batch_size=32):
     X_tensor = torch.tensor(X, dtype=torch.float32)
     y_tensor = torch.tensor(y, dtype=torch.long)
 
+    print("X shape: ", X_tensor.shape)
+    print("y shape: ", y_tensor.shape)
+
     # Define 10-fold cross-validation
     kfold = StratifiedKFold(n_splits=config['kfold'], shuffle=True, random_state=config['seed'])
 
@@ -246,46 +341,36 @@ def k_fold_cross_validation(model, X, y, config, batch_size=32):
 
     num_classes = np.unique(y).shape[0]
 
-    for train_idx, test_idx in kfold.split(X, y):
-        # Create datasets for the current fold
-        test_dataset = TensorDataset(X_tensor[test_idx], y_tensor[test_idx])
-        test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+    fold = 0
 
-        # Initialize PyTorch Lightning Trainer
-        trainer = pl.Trainer(
-                accelerator="gpu",
-                devices=1,
-                # strategy='ddp',
-            )
+    model = None
 
-        # Making predictions
-        predictions = trainer.predict(model, dataloaders=test_loader)
+    for train_index, test_index in kfold.split(X, y):
+        # Split the data into training and testing sets
+        X_train, X_test = X_tensor[train_index], X_tensor[test_index]
+        y_train, y_test = y_tensor[train_index], y_tensor[test_index]
+        print(f"Fold {fold + 1} of {config['kfold']}")
+        print("num_classes: ", num_classes)
+        print("X_train shape: ", X_train.shape)
+        print("y_train shape: ", y_train.shape)
+        print("X_test shape: ", X_test.shape)
+        print("y_test shape: ", y_test.shape)
 
+        model, test_dataloader = evaluate_lstm(X_train, y_train, X_test, y_test, config, fold)
 
-        # Process predictions
-        # Ensure predictions are concatenated correctly across batches
-        # fold_probs_list = [batch[0] for batch in predictions]  # Assuming the output is a tuple (predictions, targets)
-        fold_probs = torch.cat(predictions, dim=0).cpu().numpy()
-        # fold_probs = fold_probs.reshape(-1, num_classes)
+        y_pred_batch, y_prob_batch = predict(model, test_dataloader, num_classes)
+        y_pred.append(y_pred_batch)
+        y_prob.append(y_prob_batch)
 
-        fold_preds = np.argmax(fold_probs, axis=1)
+    y_pred = np.concatenate(y_pred, axis=1)
+    y_prob = np.concatenate(y_prob, axis=1)
 
-        y_prob.extend(fold_probs)
-        y_pred.extend(fold_preds)
+    return y_pred, y_prob, model
 
-    y_pred = np.array(y_pred)
-    y_prob = np.array(y_prob)
-
-    print("y_pred shape: ", y_pred.shape)
-    print("y_prob shape: ", y_prob.shape)
-
-    return y_pred, y_prob
-
-def predict(model, dataloader):
-    if torch.cuda.is_available():
-        device = torch.device("cuda:0")
-        model = model.to(device)
-        model = DataParallel(model)
+def predict(model, dataloader, num_classes):
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    model = model.to(device)
+    # model = DataParallel(model)
 
     model.eval()  # Set the model to evaluation mode
 
@@ -304,7 +389,9 @@ def predict(model, dataloader):
             y_proba_list.append(y_proba_batch)
         # Concatenate predictions for all batches
     y_proba = np.vstack(y_proba_list)
-    return y_proba
+    y_proba = y_proba.reshape(-1, num_classes)
+    yhat = np.argmax(y_proba, axis=1)
+    return yhat, y_proba
 
 
 def plot_confusion_matrix(y_test, y_pred, target_names, target_label, model, dataset_name, dataset, task, method):
@@ -342,11 +429,12 @@ def measure_inference_time(classifier, X_test, model, dataset_name, task, method
     start_time = time.time()
     yhat = None
     if model == "lstm":
-        sample = torch.tensor(sample, dtype=torch.float32)
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        sample = sample.to(device)
-        classifier = classifier.to(device)
-        yhat = classifier(sample)
+        # sample = torch.tensor(sample, dtype=torch.float32)
+        # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        # sample = sample.to(device)
+        # classifier = classifier.to(device)
+        # yhat = classifier(sample)
+        yhat = classifier.predict(sample)
     else:
         yhat = classifier.predict(sample)
     end_time = time.time()
@@ -404,7 +492,7 @@ def make_plots(config, target_label, X_train, y_train, X_val, y_val, X_test, y_t
 
 
         # yhat = classifier.predict(X_test)
-        yhat, y_proba = get_predictions(classifier, X_test, y_test, model_type='ml', config=config)
+        yhat, y_proba = get_predictions(classifier, X_test, y_test, config=config)
 
         measure_inference_time(classifier, X_test, model, dataset_name, task, method)
         # y_proba = classifier.predict_proba(X_test)
@@ -417,7 +505,22 @@ def make_plots(config, target_label, X_train, y_train, X_val, y_val, X_test, y_t
         plot_data = []
 
         # train the lstm classifier
-        classifier, test_dataloader = train_lstm(config, X_train, y_train, X_val, y_val, X_test, y_test, task)
+        base_model, test_dataloader = train_lstm(config, X_train, y_train, X_val, y_val, X_test, y_test, task)
+        # predict
+        # yhat, y_proba = predict(classifier, test_dataloader, config)
+        # y_proba = y_proba.reshape(-1, config['num_classes'])
+        # yhat = np.argmax(y_proba, axis=1)
+        # yhat, y_proba, classifier = k_fold_cross_validation(classifier, X_test, y_test, config=config, batch_size=config['batch_size'])
+
+
+        # move the model to the gpu
+        # device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        # base_model = base_model.to(device)
+
+        # base_model = LSTMClassifier(**config)
+        classifier = PyTorchClassifierWrapper(base_model, nn.CrossEntropyLoss(), torch.optim.Adam(base_model.parameters()), epochs=config['max_epochs'])
+
+        yhat, y_proba = get_predictions(classifier, X_test, y_test, config=config, model="dl")
 
         end_time = time.time()
         duration = end_time - start_time
@@ -426,12 +529,6 @@ def make_plots(config, target_label, X_train, y_train, X_val, y_val, X_test, y_t
         # save the plot data
         plot_data = pd.DataFrame(plot_data)
         plot_data.to_csv(f"measurements/{model}-{task}-{method}-{dataset}-{dataset_name}-lstm-training-duration.csv")
-
-        # predict
-        # y_proba = predict(classifier, test_dataloader)
-        # y_proba = y_proba.reshape(-1, config['num_classes'])
-        # yhat = np.argmax(y_proba, axis=1)
-        yhat, y_proba = k_fold_cross_validation(classifier, X_test, y_test, config=config, batch_size=config['batch_size'])
 
         measure_inference_time(classifier, X_test, model, dataset_name, task, method)
 
@@ -448,6 +545,14 @@ def main():
     config = merge_config_with_cli_args(default_config)
 
     pl.seed_everything(config['seed'])
+
+    log = config.get('log', False)
+
+    logger = None
+    if log:
+        logger = WandbLogger(project="usb_side_channel", log_model="all", config=config)
+
+    config['logger'] = logger
 
     # if config['features'] is None:
     #     raise ValueError("Provide a model path")

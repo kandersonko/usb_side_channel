@@ -13,6 +13,54 @@ import lightning.pytorch as pl
 from config import default_config as config
 
 from models.autoencoders import CNNLSTMEncoder
+from sklearn.base import BaseEstimator, ClassifierMixin
+from sklearn.model_selection import cross_val_predict
+
+class PyTorchClassifierWrapper(BaseEstimator, ClassifierMixin):
+    def __init__(self, model, criterion, optimizer, epochs=10):
+        # move the model to the gpu
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.model = model.to(self.device)
+        self.criterion = criterion
+        self.optimizer = optimizer
+        self.epochs = epochs
+        self.classes_ = None  # Initialize the classes_ attribute
+
+    def fit(self, X, y):
+        # Set the classes_ attribute
+        self.classes_ = torch.unique(torch.tensor(y)).numpy()
+
+        # Convert X and y to torch tensors
+        X_tensor = torch.tensor(X, dtype=torch.float32).to(self.device)
+        y_tensor = torch.tensor(y, dtype=torch.long).to(self.device)
+
+        # Training loop
+        for epoch in range(self.epochs):
+            self.optimizer.zero_grad()
+            output = self.model(X_tensor)
+            loss = self.criterion(output, y_tensor)
+            loss.backward()
+            self.optimizer.step()
+
+        return self
+
+    def predict(self, X):
+        # Turn off gradient computation
+        with torch.no_grad():
+            X_tensor = torch.tensor(X, dtype=torch.float32).to(self.device)
+            outputs = self.model(X_tensor)
+            _, predicted = torch.max(outputs, 1)
+
+        return predicted.cpu().numpy()
+
+    # Implement predict_proba if your task is classification
+    def predict_proba(self, X):
+        with torch.no_grad():
+            X_tensor = torch.tensor(X, dtype=torch.float32).to(self.device)
+            outputs = torch.softmax(self.model(X_tensor), dim=1)
+
+        return outputs.cpu().numpy()
+
 
 # Create a LSTM classifier
 class LSTMClassifier(pl.LightningModule):
