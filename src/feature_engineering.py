@@ -107,23 +107,26 @@ def feature_engineering(X, y, target_label, output_file, dataset, subset):
     # select relevant features
     # features.fillna(0, inplace=True)
 
-    selected_features = select_features(imputed_features, y)
-    print("selected_features shape:", selected_features.shape)
+    # selected_features = select_features(imputed_features, y)
+    # print("selected_features shape:", selected_features.shape)
 
-    y_series = pd.Series(y, index=selected_features.index)
+    # y_series = pd.Series(y, index=selected_features.index)
 
-    relevance_table = calculate_relevance_table(selected_features, y_series)
-    relevance_table = relevance_table[relevance_table.relevant]
+    # relevance_table = calculate_relevance_table(selected_features, y_series)
+    # relevance_table = relevance_table[relevance_table.relevant]
 
-    # Sort the relevance table
-    relevance_table_sorted = relevance_table.sort_values(by='p_value')
+    # # Sort the relevance table
+    # relevance_table_sorted = relevance_table.sort_values(by='p_value')
 
-    # Select the top k features
-    k = 180  # Number of features to keep
-    top_features = relevance_table_sorted.head(k)['feature'].values
+    # # Select the top k features
+    # # k = 180  # Number of features to keep
+    # # top_features = relevance_table_sorted.head(k)['feature'].values
+    # top_features = relevance_table_sorted['feature'].values
 
-    # Filter the extracted features to keep only the top k features
-    features_filtered = selected_features[top_features]
+    # # Filter the extracted features to keep only the top k features
+    # features_filtered = selected_features[top_features]
+    features_filtered = imputed_features
+    y_series = pd.Series(y, index=imputed_features.index)
 
     print("features_filtered shape:", features_filtered.shape)
 

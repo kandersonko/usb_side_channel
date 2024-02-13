@@ -296,7 +296,6 @@ def get_predictions(classifier, X, y, config, model="ml"):
     # Define 10-fold cross-validation
     kfold = StratifiedKFold(n_splits=config['kfold'], shuffle=True, random_state=config['seed'])
 
-    # if model == "dl":
         # create tensor from the numpy array
         # X = torch.tensor(X, dtype=torch.float32)
         # y = torch.tensor(y, dtype=torch.long)
@@ -310,8 +309,10 @@ def get_predictions(classifier, X, y, config, model="ml"):
     y_prob = None  # Initialize y_prob
 
     # Perform cross-validation and get predictions
-    y_pred = cross_val_predict(classifier, X, y, cv=kfold, method='predict', verbose=3, n_jobs=-1)
-    # y_pred = cross_val_predict(classifier, X, y, cv=kfold, method='predict', verbose=2)
+    # if model == "dl":
+    y_pred = cross_val_predict(classifier, X, y, cv=kfold, method='predict', verbose=3)
+    # else:
+    #     y_pred = cross_val_predict(classifier, X, y, cv=kfold, method='predict', verbose=3, n_jobs=-1)
 
     # For models that have a decision_function or predict_proba method, use one of them to get probabilities
     if hasattr(classifier, "predict_proba"):
@@ -506,6 +507,9 @@ def make_plots(config, target_label, X_train, y_train, X_val, y_val, X_test, y_t
 
         # train the lstm classifier
         base_model, test_dataloader = train_lstm(config, X_train, y_train, X_val, y_val, X_test, y_test, task)
+
+        end_time = time.time()
+        duration = end_time - start_time
         # predict
         # yhat, y_proba = predict(classifier, test_dataloader, config)
         # y_proba = y_proba.reshape(-1, config['num_classes'])
@@ -522,8 +526,6 @@ def make_plots(config, target_label, X_train, y_train, X_val, y_val, X_test, y_t
 
         yhat, y_proba = get_predictions(classifier, X_test, y_test, config=config, model="dl")
 
-        end_time = time.time()
-        duration = end_time - start_time
 
         plot_data.append({"name": "lstm", "task": "training", "dataset": dataset_name, "duration": duration})
         # save the plot data
