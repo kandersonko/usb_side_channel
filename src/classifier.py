@@ -164,8 +164,8 @@ def train_lstm(config, X_train, y_train, X_val, y_val, X_test, y_test, task, cla
             checkpoint_callback = ModelCheckpoint(
                 # or another metric such as 'val_accuracy'
                 monitor=config['monitor_metric'],
-                dirpath='./checkpoints',
-                filename='classifier-'+ task + '-{epoch:02d}-{val_loss:.2f}-{val_acc:.2f}',
+                dirpath=config['checkpoint_path'],
+                filename='classifier-'+ f"{config['dataset']}-{config['method']}" + '-{epoch:02d}-{val_loss:.2f}-{val_acc:.2f}',
                 save_top_k=1,
                 mode='min',  # 'min' for loss and 'max' for accuracy
             )
@@ -541,6 +541,20 @@ def make_plots(config, target_label, X_train, y_train, X_val, y_val, X_test, y_t
 
 
 
+def tune(config, X_train, y_train, X_val, y_val, X_test, y_test, task, target_names):
+
+    base_model, _ = train_lstm(config, X_train, y_train, X_val, y_val, X_test, y_test, task)
+
+    classifier = PyTorchClassifierWrapper(base_model, nn.CrossEntropyLoss(), torch.optim.Adam(base_model.parameters()), epochs=config['max_epochs'])
+
+    y_pred, y_proba = get_predictions(classifier, X_test, y_test, config=config, model="dl")
+
+    accuracy = accuracy_score(y_test, y_pred)
+    # Generate classification report
+    report = classification_report(y_test, y_pred, target_names=target_names)
+    print("Number of folds: ", config['kfold'])
+    print(report)
+
 
 def main():
 
@@ -548,11 +562,20 @@ def main():
 
     pl.seed_everything(config['seed'])
 
+    tuning = config.get('tuning', None)
+    print("tuning: ", tuning)
+
     log = config.get('log', False)
 
+    if tuning:
+        config['checkpoint_path'] = 'tuning_checkpoints'
+    else:
+        config['checkpoint_path'] = 'checkpoints'
+
     logger = None
-    if log:
-        logger = WandbLogger(project="usb_side_channel", log_model="all", config=config)
+    wandb_logger = WandbLogger(project="usb_side_channel", config=config)
+    if log or tuning:
+        logger = wandb_logger
 
     config['logger'] = logger
 
@@ -590,20 +613,23 @@ def main():
         y_test = dataset['y_test']
         target_names = dataset['target_names']
 
-        make_plots(
-            config,
-            target_label,
-            X_train,
-            y_train,
-            X_val,
-            y_val,
-            X_test,
-            y_test,
-            target_names,
-            dataset='raw',
-            dataset_name=dataset_name,
-            method=method,
-        )
+        if tuning:
+            tune(config, X_train, y_train, X_val, y_val, X_test, y_test, task, target_names)
+        else:
+            make_plots(
+                config,
+                target_label,
+                X_train,
+                y_train,
+                X_val,
+                y_val,
+                X_test,
+                y_test,
+                target_names,
+                dataset='raw',
+                dataset_name=dataset_name,
+                method=method,
+            )
 
 
     if method == 'tsfresh':
@@ -633,20 +659,23 @@ def main():
 
         target_names = raw_dataset['target_names']
 
-        make_plots(
-            config,
-            target_label,
-            X_train,
-            y_train,
-            X_val,
-            y_val,
-            X_test,
-            y_test,
-            target_names,
-            dataset='tsfresh',
-            dataset_name=dataset_name,
-            method=method,
-        )
+        if tuning:
+            tune(config, X_train, y_train, X_val, y_val, X_test, y_test, task, target_names)
+        else:
+            make_plots(
+                config,
+                target_label,
+                X_train,
+                y_train,
+                X_val,
+                y_val,
+                X_test,
+                y_test,
+                target_names,
+                dataset='tsfresh',
+                dataset_name=dataset_name,
+                method=method,
+            )
 
     elif method == 'encoder':
 
@@ -660,20 +689,23 @@ def main():
         y_test = dataset['y_test']
         target_names = dataset['target_names']
 
-        make_plots(
-            config,
-            target_label,
-            X_train,
-            y_train,
-            X_val,
-            y_val,
-            X_test,
-            y_test,
-            target_names,
-            dataset='features',
-            dataset_name=dataset_name,
-            method=method,
-        )
+        if tuning:
+            tune(config, X_train, y_train, X_val, y_val, X_test, y_test, task, target_names)
+        else:
+            make_plots(
+                config,
+                target_label,
+                X_train,
+                y_train,
+                X_val,
+                y_val,
+                X_test,
+                y_test,
+                target_names,
+                dataset='features',
+                dataset_name=dataset_name,
+                method=method,
+            )
 
 
 
