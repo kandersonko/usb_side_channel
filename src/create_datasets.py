@@ -137,13 +137,23 @@ def main():
     #   (same type of category, but device with different serial number)
     # Choose a single device for each brand.
     print("Creating Dataset B")
-    category = 'flash_drive'
+    # category = 'flash_drive'
+    category = 'mouse'
     dataset_b = data[data['category'] == category]
-    lexar = dataset_b[dataset_b['device'] == 'lexar_1']
-    pny = dataset_b[dataset_b['device'] == 'pny_1']
-    sandisk = dataset_b[dataset_b['device'] == 'sandisk_1']
-    mosdat = dataset_b[dataset_b['device'] == 'mosdat']
-    dataset_b = pd.concat([lexar, pny, sandisk, mosdat])
+    # flash drive devices
+    # lexar = dataset_b[dataset_b['device'] == 'lexar_1']
+    # pny = dataset_b[dataset_b['device'] == 'pny_1']
+    # sandisk = dataset_b[dataset_b['device'] == 'sandisk_1']
+    # # sandisk = dataset_b[dataset_b['device'] == 'sandisk_glide']
+    # mosdat = dataset_b[dataset_b['device'] == 'mosdat']
+    # dataset_b = pd.concat([lexar, pny, sandisk, mosdat])
+    #
+    # mouse devices
+    logitech = dataset_b[dataset_b['device'] == 'logitech_1']
+    perixx = dataset_b[dataset_b['device'] == 'perixx']
+    dell = dataset_b[dataset_b['device'] == 'dell']
+    lenovo = dataset_b[dataset_b['device'] == 'lenovo']
+    dataset_b = pd.concat([logitech, perixx, dell, lenovo])
     save_dataset(dataset_b, 'dataset_b', 'device', config, common_data)
 
     # Dataset C1
@@ -151,8 +161,13 @@ def main():
     #   Identification task: individual devices same category and same manufacturer
     #   (same type of category, but device with different serial number))
     print("Creating Dataset C1")
-    category = 'flash_drive'
-    brand = 'pny'
+    # flash drive devices
+    # category = 'flash_drive'
+    # brand = 'pny'
+    #
+    # mouse devices
+    category = 'mouse'
+    brand = 'logitech'
     dataset_c1 = data[(data['category'] == category) & (data['brand'] == brand)]
     save_dataset(dataset_c1, 'dataset_c1', 'device', config, common_data)
 
@@ -187,7 +202,8 @@ def main():
     #   Use 3-normal, remove WH and J-B.
     print("Creating Dataset D2")
     dataset_d2 = data[data['category'] == 'cable']
-    dataset_d2 = dataset_d2[dataset_d2['device'] != 'WH']
+    # dataset_d2 = dataset_d2[dataset_d2['device'] != 'WH']
+    dataset_d2 = dataset_d2[dataset_d2['device'] != 'NT']
     dataset_d2 = dataset_d2[dataset_d2['device'] != 'J-B']
     save_dataset(dataset_d2, 'dataset_d2', 'device', config, common_data)
 

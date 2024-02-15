@@ -1,0 +1,56 @@
+command:
+  - ${env}
+  - python3
+  - ${program}
+  - ${args_no_boolean_flags}
+method: bayes
+metric:
+  goal: minimize
+  name: val_loss
+parameters:
+  batch_size:
+    values: [4, 8, 12, 16]
+  bottleneck_dim:
+    distribution: int_uniform
+    max: 512
+    min: 16
+  conv1_out_channels:
+    distribution: int_uniform
+    max: 512
+    min: 8
+  conv2_out_channels:
+    distribution: int_uniform
+    max: 512
+    min: 8
+  dropout:
+    distribution: uniform
+    max: 0.9
+    min: 0.01
+  log:
+    values:
+      - true
+  max_epochs:
+    distribution: categorical
+    values:
+      - 500
+  min_epochs:
+    distribution: categorical
+    values:
+      - 20
+  monitor_metric:
+    distribution: categorical
+    values:
+      - val_loss
+  num_classes:
+    distribution: categorical
+    values:
+      - 4
+  num_lstm_layers:
+    distribution: int_uniform
+    max: 20
+    min: 1
+  reconstruction_loss_weight:
+    distribution: uniform
+    max: 2
+    min: 0.01
+program: train.py

@@ -29,7 +29,7 @@ def merge_config_with_cli_args(config):
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--batch_size', type=int, default=32)
     parser.add_argument('--val_split', type=float, default=0.1)
-    parser.add_argument('--bottleneck_dim', type=int, default=32)
+    parser.add_argument('--bottleneck_dim', type=int, default=64)
     parser.add_argument('--max_epochs', type=int, default=100)
     parser.add_argument('--min_epochs', type=int, default=10)
     parser.add_argument('--early_stopping_patience', type=int, default=10)
@@ -37,7 +37,7 @@ def merge_config_with_cli_args(config):
     parser.add_argument('--learning_rate_patience', type=int, default=3)
     parser.add_argument('--monitor_metric', type=str, default='val_loss')
     parser.add_argument('--checkpoint_path', type=str, default='best_models/')
-    parser.add_argument('--accumulate_grad_batches', type=int, default=1)
+    parser.add_argument('--accumulate_grad_batches', type=int, default=2)
     parser.add_argument('--num_workers', type=int, default=num_workers)
     parser.add_argument('--conv1_out_channels', type=int, default=64)
     parser.add_argument('--conv2_out_channels', type=int, default=128)
@@ -51,14 +51,24 @@ def merge_config_with_cli_args(config):
     # lstm number of layers
     parser.add_argument('--num_lstm_layers', type=int, default=1)
 
+
+    # lstm classifier
+    parser.add_argument('--lstm_input_dim', type=int, default=10000)
+    parser.add_argument('--lstm_hidden_dim', type=int, default=32)
+    parser.add_argument('--lstm_output_dim', type=int, default=4)
+    parser.add_argument('--lstm_num_layers', type=int, default=1)
+    parser.add_argument('--lstm_dropout', type=float, default=0.2)
+    parser.add_argument('--lstm_bidirectional', action='store_true', default=False)
+
+
     # add learning rate
     parser.add_argument('--learning_rate', type=float, default=1e-3)
-    # add reconstruction loss weight
-    parser.add_argument('--reconstruction_loss_weight',
-                        type=float, default=1.0)
-    # add class loss weight
-    parser.add_argument('--classification_loss_weight',
-                        type=float, default=1.0)
+    # # add reconstruction loss weight
+    # parser.add_argument('--reconstruction_loss_weight',
+    #                     type=float, default=1.0)
+    # # add class loss weight
+    # parser.add_argument('--classification_loss_weight',
+    #                     type=float, default=1.0)
 
     # # add no_class_weights boolean flag with default False
     # parser.add_argument('--use_class_weights', action='store_true', default=False)
@@ -87,7 +97,7 @@ def merge_config_with_cli_args(config):
                         default='category', choices=['category', 'class', 'state', 'device', 'device_name', 'brand'])
 
     # add number of classes
-    parser.add_argument('--num_classes', type=int, default=5)
+    parser.add_argument('--num_classes', type=int, default=4)
 
     # add model path
     parser.add_argument('--model_path', type=str, default='')

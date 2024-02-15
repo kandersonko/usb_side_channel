@@ -485,7 +485,7 @@ class USBDataset(Dataset):
 
 
 class USBDataModule(pl.LightningDataModule):
-    def __init__(self, dataset_path=config['dataset_path'], batch_size=config['batch_size'], val_split=config['val_split'], num_workers=4):
+    def __init__(self, dataset_path=config['data_dir'], batch_size=config['batch_size'], val_split=config['val_split'], num_workers=4):
         super(USBDataModule, self).__init__()
         self.dataset_path = Path(dataset_path)
         self.batch_size = batch_size

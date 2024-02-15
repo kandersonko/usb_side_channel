@@ -42,7 +42,7 @@ from sklearn.preprocessing import LabelEncoder
 
 from imblearn.over_sampling import SMOTE
 
-from models.classifiers import LSTMClassifier, PyTorchClassifierWrapper
+from models.classifiers import LSTMClassifier, PyTorchClassifierWrapper, PureLSTMClassifier
 from config import default_config, merge_config_with_cli_args
 
 from dataset import compute_class_weights
@@ -99,15 +99,9 @@ def plot_roc_auc(y_test, y_proba, target_names, model, dataset_name, dataset, ta
     plt.savefig(f"results/{model}-{task}-{method}-{dataset}-{dataset_name}-roc_auc.png", dpi=300, bbox_inches="tight")
 
 
-def train_lstm(config, X_train, y_train, X_val, y_val, X_test, y_test, task, class_weights=None):
+def train_lstm(classifier, X_train, y_train, X_val, y_val, X_test, y_test, config, task, class_weights=None):
         config['sequence_length'] = X_train.shape[1]
         class_weights = None
-        if config.get('use_class_weights'):
-            class_weights = compute_class_weights(y_train)
-            classifier = LSTMClassifier(**config, class_weights=class_weights)
-        else:
-            classifier = LSTMClassifier(**config)
-        print(classifier)
 
         X_train = torch.tensor(X_train, dtype=torch.float32)
         y_train = torch.tensor(y_train, dtype=torch.long)
@@ -146,66 +140,48 @@ def train_lstm(config, X_train, y_train, X_val, y_val, X_test, y_test, task, cla
         # X_test = X_test.cuda()
         # y_test = y_test.cuda()
 
-        if config['model_path'] is not None and config['model_path'] != '':
-            classifier = LSTMClassifier.load_from_checkpoint(config['model_path'])
-            # move to gpu
-            classifier.cuda()
-            # move the features to the gpu
+        early_stopping = EarlyStopping(
+            config['monitor_metric'], patience=config['early_stopping_patience'], verbose=False, mode='min', min_delta=0.0)
+        learning_rate_monitor = LearningRateMonitor(
+            logging_interval='epoch', log_momentum=True)
+        learning_rate_finder = LearningRateFinder()
 
-            # classifier.load_state_dict(torch.load(config['model_path'])['state_dict'])
-        else:
+        checkpoint_callback = ModelCheckpoint(
+            # or another metric such as 'val_accuracy'
+            monitor=config['monitor_metric'],
+            dirpath=config['checkpoint_path'],
+            filename='classifier-'+ f"{config['dataset']}-{config['method']}" + '-{epoch:02d}-{val_loss:.2f}-{val_acc:.2f}',
+            save_top_k=1,
+            mode='min',  # 'min' for loss and 'max' for accuracy
+        )
 
-            early_stopping = EarlyStopping(
-                config['monitor_metric'], patience=config['early_stopping_patience'], verbose=False, mode='min', min_delta=0.0)
-            learning_rate_monitor = LearningRateMonitor(
-                logging_interval='epoch', log_momentum=True)
-            learning_rate_finder = LearningRateFinder()
+        callbacks = [
+            early_stopping,
+            learning_rate_monitor,
+            checkpoint_callback,
+            learning_rate_finder,
+        ]
+        torch.set_float32_matmul_precision('medium')
+        trainer = pl.Trainer(
+            # accumulate_grad_batches=config['ACCUMULATE_GRAD_BATCHES'],
+            log_every_n_steps=4,
+            num_sanity_val_steps=0,
+            max_epochs=config['max_epochs'],
+            min_epochs=config['min_epochs'],
+            accelerator="gpu",
+            devices=-1,
+            strategy='ddp',
+            logger=config['logger'],
+            callbacks=callbacks,
+            precision="32-true",
+            # precision="16-mixed",
+            # precision=32,
+            # default_root_dir=config['CHECKPOINT_PATH'],
+        )
 
-            checkpoint_callback = ModelCheckpoint(
-                # or another metric such as 'val_accuracy'
-                monitor=config['monitor_metric'],
-                dirpath=config['checkpoint_path'],
-                filename='classifier-'+ f"{config['dataset']}-{config['method']}" + '-{epoch:02d}-{val_loss:.2f}-{val_acc:.2f}',
-                save_top_k=1,
-                mode='min',  # 'min' for loss and 'max' for accuracy
-            )
+        trainer.fit(classifier, train_dataloader, val_dataloader)
 
-            callbacks = [
-                early_stopping,
-                learning_rate_monitor,
-                checkpoint_callback,
-                learning_rate_finder,
-            ]
-            torch.set_float32_matmul_precision('medium')
-            trainer = pl.Trainer(
-                # accumulate_grad_batches=config['ACCUMULATE_GRAD_BATCHES'],
-                log_every_n_steps=4,
-                num_sanity_val_steps=0,
-                max_epochs=config['max_epochs'],
-                min_epochs=config['min_epochs'],
-                accelerator="gpu",
-                devices=-1,
-                strategy='ddp',
-                logger=config['logger'],
-                callbacks=callbacks,
-                precision="32-true",
-                # precision="16-mixed",
-                # precision=32,
-                # default_root_dir=config['CHECKPOINT_PATH'],
-            )
-
-            trainer.fit(classifier, train_dataloader, val_dataloader)
-
-
-            # best_model_path = checkpoint_callback.best_model_path
-            # classifier = Autoencoder.load_from_checkpoint(best_model_path)
-            # classifier.load_state_dict(torch.load(best_model_path)['state_dict'])
-            classifier = LSTMClassifier.load_from_checkpoint(checkpoint_callback.best_model_path)
-            device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-            classifier = classifier.to(device)
-
-
-        return classifier, test_dataloader
+        return checkpoint_callback.best_model_path
 
 
 def evaluate_lstm(X_train, y_train, X_val, y_val, config, fold):
@@ -504,12 +480,28 @@ def make_plots(config, target_label, X_train, y_train, X_val, y_val, X_test, y_t
         start_time = time.time()
 
         plot_data = []
+        classifier = None
+
+        if config['model_path'] is not None and config['model_path'] != '':
+            classifier = LSTMClassifier.load_from_checkpoint(config['model_path'])
+            # move to gpu
+            classifier.cuda()
+            # move the features to the gpu
+
+            # classifier.load_state_dict(torch.load(config['model_path'])['state_dict'])
+        else:
+            classifier = LSTMClassifier(**config)
 
         # train the lstm classifier
-        base_model, test_dataloader = train_lstm(config, X_train, y_train, X_val, y_val, X_test, y_test, task)
+        best_model_path = train_lstm(classifier, X_train, y_train, X_val, y_val, X_test, y_test, config, task)
+
 
         end_time = time.time()
         duration = end_time - start_time
+
+        classifier = LSTMClassifier.load_from_checkpoint(best_model_path)
+        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        classifier = classifier.to(device)
         # predict
         # yhat, y_proba = predict(classifier, test_dataloader, config)
         # y_proba = y_proba.reshape(-1, config['num_classes'])
@@ -522,7 +514,7 @@ def make_plots(config, target_label, X_train, y_train, X_val, y_val, X_test, y_t
         # base_model = base_model.to(device)
 
         # base_model = LSTMClassifier(**config)
-        classifier = PyTorchClassifierWrapper(base_model, nn.CrossEntropyLoss(), torch.optim.Adam(base_model.parameters()), epochs=config['max_epochs'])
+        classifier = PyTorchClassifierWrapper(classifier, nn.CrossEntropyLoss(), torch.optim.Adam(classifier.parameters()), epochs=config['max_epochs'])
 
         yhat, y_proba = get_predictions(classifier, X_test, y_test, config=config, model="dl")
 
@@ -542,8 +534,11 @@ def make_plots(config, target_label, X_train, y_train, X_val, y_val, X_test, y_t
 
 
 def tune(config, X_train, y_train, X_val, y_val, X_test, y_test, task, target_names):
+    model = LSTMClassifier(**config)
 
-    base_model, _ = train_lstm(config, X_train, y_train, X_val, y_val, X_test, y_test, task)
+    best_model_path = train_lstm(model, X_train, y_train, X_val, y_val, X_test, y_test, config, task)
+
+    base_model = LSTMClassifier.load_from_checkpoint(best_model_path)
 
     classifier = PyTorchClassifierWrapper(base_model, nn.CrossEntropyLoss(), torch.optim.Adam(base_model.parameters()), epochs=config['max_epochs'])
 
@@ -711,3 +706,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+    wandb.finish()

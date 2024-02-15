@@ -9,8 +9,8 @@ classifiers=("lstm")
 datasets=("dataset_a" "dataset_b" "dataset_c1" "dataset_c2" "dataset_d1" "dataset_d2")
 # datasets=("dataset_b")
 
-methods=("raw" "encoder" "tsfresh")
-# methods=("tsfresh")
+# methods=("raw" "encoder" "tsfresh")
+methods=("encoder")
 
 folds=10
 epochs=100
@@ -31,7 +31,7 @@ for method in "${methods[@]}"; do
             echo "=============================================="
             echo "=============================================="
             echo "Running classifier $classifier on dataset $dataset with target label $target_label using method $method"
-            python classifier.py --task=identification --method=$method --dataset=$dataset --target_label=$target_label --classifier=$classifier --batch_size=8 --kfold=$folds --max_epochs=$epochs
+            python classifier.py --task=identification --method=$method --dataset=$dataset --target_label=$target_label --classifier=$classifier --batch_size=8 --kfold=$folds --max_epochs=$epochs --learning_rate=0.001 --bottleneck_dim=64 --conv1_out_channels=32 --conv2_out_channels=64
         done
     done
 done

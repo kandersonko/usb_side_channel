@@ -133,10 +133,10 @@ def feature_engineering(X, y, target_label, output_file, dataset, subset):
     end_time = time.time()
     duration = end_time - start_time
 
-    plot_data.append({"name": "tsfresh", "task": "feature engineering", "dataset": "all", "duration": duration})
+    plot_data.append({"name": "tsfresh", "task": "feature engineering", "dataset": f"{dataset}", "duration": duration})
     # save the plot data
     plot_data = pd.DataFrame(plot_data)
-    plot_data.to_csv('measurements/{dataset}-{subset}-tsfresh-feature-engineering-duration.csv')
+    plot_data.to_csv(f'measurements/{dataset}-{subset}-tsfresh-feature-engineering-duration.csv')
 
     print(features_filtered.head())
 

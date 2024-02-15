@@ -1,3 +1,5 @@
+from pathlib import Path
+import os
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score, classification_report
 import time
@@ -36,6 +38,8 @@ def main():
         raise ValueError("Provide a model path")
 
     pl.seed_everything(config['seed'], workers=True)
+
+    subset = config['dataset_subset']
 
     # plot data
     plot_data = []
@@ -88,10 +92,15 @@ def main():
 
     end_time = time.time()
     duration = end_time - start_time
-    plot_data.append({"name": "autoencoder", "task": "extract features", "dataset": f"{dataset_name}-{target_label}", "duration": duration})
+    plot_data.append({"name": "autoencoder", "task": "extract features", "dataset": f"{dataset_name}", "duration": duration})
+    folder = 'measurements'
+    if not os.path.exists(folder):
+        os.makedirs(folder)
+    filename = Path(f'{folder}/{dataset_name}-{subset}-autoencoder-feature-extraction-duration.csv')
+
     # save the plot data
     plot_data = pd.DataFrame(plot_data)
-    plot_data.to_csv('measurements/{dataset}-{subset}-autoencoder-feature-extraction-duration.csv')
+    plot_data.to_csv(filename)
 
     data_dir = config['data_dir']
 

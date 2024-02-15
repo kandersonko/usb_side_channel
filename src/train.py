@@ -44,7 +44,7 @@ def main():
 
     config = merge_config_with_cli_args(default_config)
 
-    log = config.get('log', False)
+    log = config.get('log', None)
 
     logger = None
     if log:
