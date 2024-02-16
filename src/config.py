@@ -53,9 +53,9 @@ def merge_config_with_cli_args(config):
 
 
     # lstm classifier
-    parser.add_argument('--lstm_input_dim', type=int, default=10000)
+    # parser.add_argument('--lstm_input_dim', type=int, default=10000)
     parser.add_argument('--lstm_hidden_dim', type=int, default=32)
-    parser.add_argument('--lstm_output_dim', type=int, default=4)
+    # parser.add_argument('--lstm_output_dim', type=int, default=4)
     parser.add_argument('--lstm_num_layers', type=int, default=1)
     parser.add_argument('--lstm_dropout', type=float, default=0.2)
     parser.add_argument('--lstm_bidirectional', action='store_true', default=False)
@@ -75,6 +75,8 @@ def merge_config_with_cli_args(config):
 
     # add log bool argument
     parser.add_argument('--log', action='store_true', default=False)
+    # add tuning bool argument
+    parser.add_argument('--tuning', action='store_true', default=False)
     # add dataset name argument
     parser.add_argument('--dataset', type=str, default='dataset_a')
     # add dataset subset
@@ -85,6 +87,9 @@ def merge_config_with_cli_args(config):
 
     # add max_samples_per_class
     parser.add_argument('--max_samples_per_class', type=int, default=1000)
+
+    # add model_name
+    parser.add_argument('--model_name', type=str, default='classifier')
 
     # add kfold
     parser.add_argument('--kfold', type=int, default=10)

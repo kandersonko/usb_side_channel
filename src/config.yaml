@@ -4,6 +4,7 @@ checkpoint_path: 'best_models'
 learning_rate: 0.0001
 bottleneck_dim: 256
 batch_size: 32
+model_name: 'classifier'
 # reconstruction_loss_weight: 0.7395403657181384
 # classification_loss_weight: 0.2532481787637928
 dropout: 0.2882066987034187
@@ -32,8 +33,8 @@ kfold: 10
 max_samples_per_class: 1000
 
 # lstm config
-lstm_input_dim: 10000
-lstm_output_dim: 4
+# lstm_input_dim: 10000
+# lstm_output_dim: 4
 lstm_dropout: 0.2
 lstm_hidden_dim: 256
 lstm_num_layers: 2

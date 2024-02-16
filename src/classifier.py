@@ -100,88 +100,89 @@ def plot_roc_auc(y_test, y_proba, target_names, model, dataset_name, dataset, ta
 
 
 def train_lstm(classifier, X_train, y_train, X_val, y_val, X_test, y_test, config, task, class_weights=None):
-        config['sequence_length'] = X_train.shape[1]
-        class_weights = None
+    config['sequence_length'] = X_train.shape[1]
+    config['num_classes'] = len(np.unique(y_train))
+    class_weights = None
 
-        X_train = torch.tensor(X_train, dtype=torch.float32)
-        y_train = torch.tensor(y_train, dtype=torch.long)
-        X_val = torch.tensor(X_val, dtype=torch.float32)
-        y_val = torch.tensor(y_val, dtype=torch.long)
-        X_test = torch.tensor(X_test, dtype=torch.float32)
-        y_test = torch.tensor(y_test, dtype=torch.long)
+    X_train = torch.tensor(X_train, dtype=torch.float32)
+    y_train = torch.tensor(y_train, dtype=torch.long)
+    X_val = torch.tensor(X_val, dtype=torch.float32)
+    y_val = torch.tensor(y_val, dtype=torch.long)
+    X_test = torch.tensor(X_test, dtype=torch.float32)
+    y_test = torch.tensor(y_test, dtype=torch.long)
 
-        print("after converting to tensors")
-        print("X_train shape: ", X_train.shape)
-        print("y_train shape: ", y_train.shape)
-        print("X_test shape: ", X_test.shape)
-        print("y_test shape: ", y_test.shape)
+    print("after converting to tensors")
+    print("X_train shape: ", X_train.shape)
+    print("y_train shape: ", y_train.shape)
+    print("X_test shape: ", X_test.shape)
+    print("y_test shape: ", y_test.shape)
 
 
-        train_dataset = TensorDataset(X_train, y_train)
-        val_dataset = TensorDataset(X_val, y_val)
-        test_dataset = TensorDataset(X_test, y_test)
+    train_dataset = TensorDataset(X_train, y_train)
+    val_dataset = TensorDataset(X_val, y_val)
+    test_dataset = TensorDataset(X_test, y_test)
 
-        # print the shapes
-        print("train_dataset shape: ", len(train_dataset))
-        print("val_dataset shape: ", len(val_dataset))
-        print("test_dataset shape: ", len(test_dataset))
+    # print the shapes
+    print("train_dataset shape: ", len(train_dataset))
+    print("val_dataset shape: ", len(val_dataset))
+    print("test_dataset shape: ", len(test_dataset))
 
-        class_counts = torch.bincount(y_train)
-        class_weights = 1. / class_counts
-        samples_weights = class_weights[y_train]
+    class_counts = torch.bincount(y_train)
+    class_weights = 1. / class_counts
+    samples_weights = class_weights[y_train]
 
-        # Create the sampler
-        sampler = WeightedRandomSampler(samples_weights, len(samples_weights))
+    # Create the sampler
+    sampler = WeightedRandomSampler(samples_weights, len(samples_weights))
 
-        train_dataloader = DataLoader(train_dataset, batch_size=config['batch_size'], shuffle=False, num_workers=config['num_workers'], sampler=sampler)
-        val_dataloader = DataLoader(val_dataset, batch_size=config['batch_size'], shuffle=False, num_workers=config['num_workers'])
-        test_dataloader = DataLoader(test_dataset, batch_size=config['batch_size'], shuffle=False, num_workers=config['num_workers'])
+    train_dataloader = DataLoader(train_dataset, batch_size=config['batch_size'], shuffle=False, num_workers=config['num_workers'], sampler=sampler)
+    val_dataloader = DataLoader(val_dataset, batch_size=config['batch_size'], shuffle=False, num_workers=config['num_workers'])
+    test_dataloader = DataLoader(test_dataset, batch_size=config['batch_size'], shuffle=False, num_workers=config['num_workers'])
 
-        # X_test = X_test.cuda()
-        # y_test = y_test.cuda()
+    # X_test = X_test.cuda()
+    # y_test = y_test.cuda()
 
-        early_stopping = EarlyStopping(
-            config['monitor_metric'], patience=config['early_stopping_patience'], verbose=False, mode='min', min_delta=0.0)
-        learning_rate_monitor = LearningRateMonitor(
-            logging_interval='epoch', log_momentum=True)
-        learning_rate_finder = LearningRateFinder()
+    early_stopping = EarlyStopping(
+        config['monitor_metric'], patience=config['early_stopping_patience'], verbose=False, mode='min', min_delta=0.0)
+    learning_rate_monitor = LearningRateMonitor(
+        logging_interval='epoch', log_momentum=True)
+    learning_rate_finder = LearningRateFinder()
 
-        checkpoint_callback = ModelCheckpoint(
-            # or another metric such as 'val_accuracy'
-            monitor=config['monitor_metric'],
-            dirpath=config['checkpoint_path'],
-            filename='classifier-'+ f"{config['dataset']}-{config['method']}" + '-{epoch:02d}-{val_loss:.2f}-{val_acc:.2f}',
-            save_top_k=1,
-            mode='min',  # 'min' for loss and 'max' for accuracy
-        )
+    checkpoint_callback = ModelCheckpoint(
+        # or another metric such as 'val_accuracy'
+        monitor=config['monitor_metric'],
+        dirpath=config['checkpoint_path'],
+        filename=f"{config['model_name']}-{config['dataset']}-{config['method']}" + '-{epoch:02d}-{val_loss:.2f}-{val_acc:.2f}',
+        save_top_k=1,
+        mode='min',  # 'min' for loss and 'max' for accuracy
+    )
 
-        callbacks = [
-            early_stopping,
-            learning_rate_monitor,
-            checkpoint_callback,
-            learning_rate_finder,
-        ]
-        torch.set_float32_matmul_precision('medium')
-        trainer = pl.Trainer(
-            # accumulate_grad_batches=config['ACCUMULATE_GRAD_BATCHES'],
-            log_every_n_steps=4,
-            num_sanity_val_steps=0,
-            max_epochs=config['max_epochs'],
-            min_epochs=config['min_epochs'],
-            accelerator="gpu",
-            devices=-1,
-            strategy='ddp',
-            logger=config['logger'],
-            callbacks=callbacks,
-            precision="32-true",
-            # precision="16-mixed",
-            # precision=32,
-            # default_root_dir=config['CHECKPOINT_PATH'],
-        )
+    callbacks = [
+        early_stopping,
+        learning_rate_monitor,
+        checkpoint_callback,
+        learning_rate_finder,
+    ]
+    torch.set_float32_matmul_precision('medium')
+    trainer = pl.Trainer(
+        # accumulate_grad_batches=config['ACCUMULATE_GRAD_BATCHES'],
+        log_every_n_steps=4,
+        num_sanity_val_steps=0,
+        max_epochs=config['max_epochs'],
+        min_epochs=config['min_epochs'],
+        accelerator="gpu",
+        devices=-1,
+        strategy='ddp',
+        logger=config['logger'],
+        callbacks=callbacks,
+        precision="32-true",
+        # precision="16-mixed",
+        # precision=32,
+        # default_root_dir=config['CHECKPOINT_PATH'],
+    )
 
-        trainer.fit(classifier, train_dataloader, val_dataloader)
+    trainer.fit(classifier, train_dataloader, val_dataloader)
 
-        return checkpoint_callback.best_model_path
+    return checkpoint_callback.best_model_path
 
 
 def evaluate_lstm(X_train, y_train, X_val, y_val, config, fold):
@@ -534,11 +535,20 @@ def make_plots(config, target_label, X_train, y_train, X_val, y_val, X_test, y_t
 
 
 def tune(config, X_train, y_train, X_val, y_val, X_test, y_test, task, target_names):
-    model = LSTMClassifier(**config)
+    config['lstm_input_dim'] = X_train.shape[1]
+    config['num_classes'] = len(np.unique(y_train))
+    config['lstm_output_dim'] = len(np.unique(y_train))
+    print("num_classes: ", config['num_classes'])
+
+    # model = LSTMClassifier(**config)
+
+    model = PureLSTMClassifier(**config)
+
 
     best_model_path = train_lstm(model, X_train, y_train, X_val, y_val, X_test, y_test, config, task)
 
-    base_model = LSTMClassifier.load_from_checkpoint(best_model_path)
+    # base_model = LSTMClassifier.load_from_checkpoint(best_model_path)
+    base_model = PureLSTMClassifier.load_from_checkpoint(best_model_path)
 
     classifier = PyTorchClassifierWrapper(base_model, nn.CrossEntropyLoss(), torch.optim.Adam(base_model.parameters()), epochs=config['max_epochs'])
 
@@ -557,7 +567,7 @@ def main():
 
     pl.seed_everything(config['seed'])
 
-    tuning = config.get('tuning', None)
+    tuning = config.get('tuning', False)
     print("tuning: ", tuning)
 
     log = config.get('log', False)

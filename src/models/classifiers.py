@@ -96,6 +96,7 @@ class PureLSTMClassifier(pl.LightningModule):
         loss = self.loss_function(y_hat, y)
         self.log('train_loss', loss, sync_dist=True, prog_bar=True)
         self.log('train_acc', self.accuracy(y_hat, y), sync_dist=True, prog_bar=True)
+        self.log('learning_rate', self.learning_rate, sync_dist=True, prog_bar=True)
 
         return loss
 
