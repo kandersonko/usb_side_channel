@@ -2,7 +2,7 @@
 #SBATCH --job-name=wandb-sweep
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH -p gpu-9
+#SBATCH -p gpu-long
 #SBATCH --gres=gpu:a6000:1
 #SBATCH --time=08:00:00
 #SBATCH --output=jobs/sweep_%A_%a.stdout
@@ -25,6 +25,6 @@ which python
 # Assign each task to a specific GPU
 # export CUDA_VISIBLE_DEVICES=$SLURM_ARRAY_TASK_ID
 
-sweep_id=zoexvn7e
+sweep_id=nxarqgfc
 
 srun --exclusive --gres=gpu:a6000:1 -l wandb agent koffi-anderson/usb_side_channel/${sweep_id}

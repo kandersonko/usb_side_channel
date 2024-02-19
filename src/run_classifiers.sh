@@ -2,15 +2,15 @@
 
 # list of classifiers
 # classifiers=("random_forest" "SVC" "KNN" "gradient_boosting" "decision_tree" "lstm")
-# classifiers=("lstm" "random_forest" "SVC" "KNN" "gradient_boosting" "decision_tree")
-classifiers=("lstm")
+classifiers=("random_forest" "SVC" "KNN" "gradient_boosting" "decision_tree")
+# classifiers=("lstm")
 
 # list of datasets
 datasets=("dataset_a" "dataset_b" "dataset_c1" "dataset_c2" "dataset_d1" "dataset_d2")
 # datasets=("dataset_b")
 
-# methods=("raw" "encoder" "tsfresh")
-methods=("encoder")
+methods=("raw" "encoder" "tsfresh")
+# methods=("encoder")
 
 folds=10
 epochs=100

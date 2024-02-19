@@ -45,7 +45,8 @@ from sklearn.metrics import accuracy_score, classification_report
 from config import default_config, merge_config_with_cli_args
 
 
-def feature_engineering(X, y, target_label, output_file, dataset, subset):
+def feature_engineering(X, y, target_label, output_file, dataset, subset, config):
+    benchmarking = config.get('benchmarking', False)
     print("X shape:", X.shape)
     print("y shape:", y.shape)
 
@@ -55,47 +56,57 @@ def feature_engineering(X, y, target_label, output_file, dataset, subset):
 
     # Create a DataFrame suitable for tsfresh
     df = pd.DataFrame({'id': ids, 'time': times, 'value': values})
-    data = dd.from_pandas(df, npartitions=10)
     print(df.head())
 
     # dask.config.set({'distributed.scheduler.allowed-failures': 50})
     # dask.config.set({'distributed.scheduler.worker-ttl': None})
 
-    # create a dask cluster
-    cluster = SLURMCluster(cores=16,
-                        processes=4,
-                        memory="128GB",
-                        walltime="02:00:00",
-                        # interface='ib0',
-                           #queue="reg",
-                        )
-    print(cluster)
+    cluster = None
+    distributor = None
+    data = None
+    if not benchmarking:
+        data = dd.from_pandas(df, npartitions=10)
+        data = data.compute()
+        # create a dask cluster
+        cluster = SLURMCluster(cores=16,
+                            processes=4,
+                            memory="128GB",
+                            walltime="02:00:00",
+                            # interface='ib0',
+                            #queue="reg",
+                            )
+        print(cluster)
 
-    print(cluster.job_script())
+        print(cluster.job_script())
 
-    cluster.adapt(minimum=50, maximum=100)
+        cluster.adapt(minimum=50, maximum=100)
 
-    # create a dask client
-    client = Client(cluster)
+        # create a dask client
+        client = Client(cluster)
 
-    cluster.scale(100)
+        cluster.scale(100)
+        distributor = ClusterDaskDistributor(cluster)
+    else:
+        data = df
 
     plot_data = []
 
-    start_time = time.time()
 
-    distributor = ClusterDaskDistributor(cluster)
 
     print("Extracting features")
 
+    disable_progressbar = False if benchmarking else True
+
+    start_time = time.time()
+
     features = extract_features(
-        data.compute(),
+        data,
         column_id="id",
         column_sort="time",
         column_value="value",
         distributor=distributor,
         default_fc_parameters=settings.EfficientFCParameters(),
-        disable_progressbar=True,
+        disable_progressbar=disable_progressbar,
     )
 
     print("features shape:", features.shape)
@@ -134,20 +145,23 @@ def feature_engineering(X, y, target_label, output_file, dataset, subset):
     duration = end_time - start_time
 
     plot_data.append({"name": "tsfresh", "task": "feature engineering", "dataset": f"{dataset}", "duration": duration})
-    # save the plot data
-    plot_data = pd.DataFrame(plot_data)
-    plot_data.to_csv(f'measurements/{dataset}-{subset}-tsfresh-feature-engineering-duration.csv')
 
-    print(features_filtered.head())
+    if not benchmarking:
+        # save the plot data
+        plot_data = pd.DataFrame(plot_data)
+        plot_data.to_csv(f'measurements/{dataset}-{subset}-tsfresh-feature-engineering-duration.csv')
 
-    # save the features with the labels concatenated
-    features_filtered[target_label] = y_series.loc[features_filtered.index]
-    features_filtered.to_csv(output_file, index=False)
+        print(features_filtered.head())
+
+        # save the features with the labels concatenated
+        features_filtered[target_label] = y_series.loc[features_filtered.index]
+        features_filtered.to_csv(output_file, index=False)
 
 
 
 def main():
     config = merge_config_with_cli_args(default_config)
+
 
     pl.seed_everything(config['seed'], workers=True)
 
@@ -159,11 +173,16 @@ def main():
         raise ValueError(f"Invalid subset: {dataset_subset}. Must be one of 'train', 'val', or 'test'.")
 
     dataset = np.load(f"{data_dir}/{dataset_name}-{target_label}.npz", allow_pickle=True)
-    X_train = dataset[f'X_{dataset_subset}']
-    y_train = dataset[f'y_{dataset_subset}']
+    X_train = dataset[f'X_train']
+    y_train = dataset[f'y_train']
+    X_val = dataset[f'X_val']
+    y_val = dataset[f'y_val']
+    X_test = dataset[f'X_test']
+    y_test = dataset[f'y_test']
+
     target_names = dataset['target_names']
 
-    feature_engineering(X=X_train, y=y_train, target_label=target_label, output_file=f"{data_dir}/{dataset_name}-{target_label}-{dataset_subset}_tsfresh.csv", dataset=dataset_name, subset=dataset_subset)
+    feature_engineering(X=X_train, y=y_train, target_label=target_label, output_file=f"{data_dir}/{dataset_name}-{target_label}-{dataset_subset}_tsfresh.csv", dataset=dataset_name, subset=dataset_subset, config=config)
 
 if __name__ == '__main__':
     main()

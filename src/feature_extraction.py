@@ -34,6 +34,8 @@ torch.multiprocessing.set_sharing_strategy('file_system')
 def main():
     config = merge_config_with_cli_args(default_config)
 
+    benchmarking = config.get('benchmarking', False)
+
     if config['model_path'] is None:
         raise ValueError("Provide a model path")
 
@@ -72,6 +74,21 @@ def main():
     y_test = dataset['y_test']
     target_names = dataset['target_names']
 
+    device = torch.device("cpu")
+    if not benchmarking:
+        if torch.cuda.is_available():
+            device = torch.device("cuda:0")
+            model = model.to(device)
+            X_train = X_train.to(device)
+            X_val = X_val.to(device)
+            X_test = X_test.to(device)
+            y_train = y_train.to(device)
+            y_val = y_val.to(device)
+            y_test = y_test.to(device)
+
+    else:
+        model = model.cpu()
+
 
     train_loader = to_dataloader(X_train, y_train, batch_size=config['batch_size'],
                                     num_workers=config['num_workers'], shuffle=True)
@@ -105,17 +122,18 @@ def main():
     data_dir = config['data_dir']
 
     # save the extracted features
-    print("Saving the features")
-    np.savez_compressed(
-        f"{data_dir}/{dataset_name}-{target_label}_features.npz",
-        X_train=X_train_encoded,
-        y_train=y_train,
-        X_val=X_val_encoded,
-        y_val=y_val,
-        X_test=X_test_encoded,
-        y_test=y_test,
-        target_names=target_names,
-    )
+    if not benchmarking:
+        print("Saving the features")
+        np.savez_compressed(
+            f"{data_dir}/{dataset_name}-{target_label}_features.npz",
+            X_train=X_train_encoded,
+            y_train=y_train,
+            X_val=X_val_encoded,
+            y_val=y_val,
+            X_test=X_test_encoded,
+            y_test=y_test,
+            target_names=target_names,
+        )
 
 
 

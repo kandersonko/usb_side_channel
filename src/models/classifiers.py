@@ -152,12 +152,12 @@ class LSTMClassifier(pl.LightningModule):
             learning_rate_patience,
             conv1_out_channels,
             conv2_out_channels,
+            use_encoder=False,
             **kwargs,
     ):
         super().__init__()
         self.save_hyperparameters()
 
-        self.dropout = nn.Dropout(dropout)
         self.monitor = monitor_metric
         self.learning_rate_patience = learning_rate_patience
         hidden_size = bottleneck_dim
@@ -167,13 +167,24 @@ class LSTMClassifier(pl.LightningModule):
         num_layers = num_lstm_layers
         self.num_layers = num_lstm_layers
         self.batch_size = batch_size
-        # self.lstm = nn.LSTM(input_size=input_size, hidden_size=hidden_size,
-                            # num_layers=num_layers, batch_first=True)
-        # use the STMEncoder
-        self.encoder = LSTMEncoder(input_size=input_size, hidden_size=hidden_size, num_layers=num_lstm_layers, dropout=dropout, sequence_length=sequence_length, num_features=1, conv1_out_channels=conv1_out_channels, conv2_out_channels=conv2_out_channels)
+
+        self.use_encoder = use_encoder
+
+        self.encoder = None
+        if use_encoder:
+            self.encoder = LSTMEncoder(input_size=input_size, hidden_size=hidden_size, num_layers=num_lstm_layers, dropout=dropout, sequence_length=sequence_length, num_features=1, conv1_out_channels=conv1_out_channels, conv2_out_channels=conv2_out_channels)
+        else:
+            self.encoder = nn.LSTM(
+                input_size=sequence_length,
+                hidden_size=bottleneck_dim,
+                num_layers=num_lstm_layers,
+                batch_first=True,
+                dropout=dropout,
+                bidirectional=False
+            )
 
         self.fc = nn.Linear(hidden_size, num_classes)
-        # self.dropout = nn.Dropout(dropout)
+        self.dropout = nn.Dropout(dropout)
         self.accuracy = Accuracy(task='multiclass', num_classes=num_classes)
 
         self.example_input_array = torch.rand(self.batch_size, sequence_length)
@@ -182,7 +193,10 @@ class LSTMClassifier(pl.LightningModule):
 
     def forward(self, x):
         # x = x.unsqueeze(1)
+        # import pdb; pdb.set_trace()
         x = self.encoder(x)
+        if not self.use_encoder:
+            x, _ = x
         x = self.dropout(x)
         x = self.fc(x)
         x = x.squeeze(1)
@@ -195,6 +209,7 @@ class LSTMClassifier(pl.LightningModule):
         loss = F.cross_entropy(y_hat, y)
         self.log('train_loss', loss, sync_dist=True, prog_bar=True)
         self.log('train_acc', self.accuracy(y_hat, y), sync_dist=True, prog_bar=True)
+        self.log('learning_rate', self.learning_rate, sync_dist=True, prog_bar=True)
         return loss
 
     def validation_step(self, batch, batch_idx):

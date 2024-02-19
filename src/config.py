@@ -91,8 +91,14 @@ def merge_config_with_cli_args(config):
     # add model_name
     parser.add_argument('--model_name', type=str, default='classifier')
 
+    # add use_encoder
+    parser.add_argument('--use_encoder', action='store_true', default=False)
+
     # add kfold
     parser.add_argument('--kfold', type=int, default=10)
+
+    #add benchmarking
+    parser.add_argument('--benchmarking', action='store_true', default=False)
 
     # data_dir for saving the dataset
     parser.add_argument('--data_dir', type=str, default='datasets')

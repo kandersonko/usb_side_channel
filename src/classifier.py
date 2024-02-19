@@ -417,7 +417,7 @@ def measure_inference_time(classifier, X_test, model, dataset_name, task, method
         yhat = classifier.predict(sample)
     end_time = time.time()
     duration = end_time - start_time
-    plot_data.append({"name": model, "task": "inference", "dataset": dataset_name, "duration": duration})
+    plot_data.append({"name": model, "task": "inference", "dataset": dataset_name, "method": method, "duration": duration})
     # save the plot data
     plot_data = pd.DataFrame(plot_data)
     plot_data.to_csv(f"measurements/{model}-{task}-{method}-{dataset_name}-inference-duration.csv")
@@ -463,7 +463,7 @@ def make_plots(config, target_label, X_train, y_train, X_val, y_val, X_test, y_t
 
         end_time = time.time()
         duration = end_time - start_time
-        plot_data.append({"name": model, "task": "training", "dataset": dataset_name, "duration": duration})
+        plot_data.append({"name": model, "task": "training", "dataset": dataset_name, "method": method, "duration": duration})
         # save the plot data
         plot_data = pd.DataFrame(plot_data)
         plot_data.to_csv(f"measurements/{model}-{task}-{method}-{dataset}-{dataset_name}-training-duration.csv")
@@ -520,7 +520,7 @@ def make_plots(config, target_label, X_train, y_train, X_val, y_val, X_test, y_t
         yhat, y_proba = get_predictions(classifier, X_test, y_test, config=config, model="dl")
 
 
-        plot_data.append({"name": "lstm", "task": "training", "dataset": dataset_name, "duration": duration})
+        plot_data.append({"name": "lstm", "task": "training", "dataset": dataset_name, "method": method, "duration": duration})
         # save the plot data
         plot_data = pd.DataFrame(plot_data)
         plot_data.to_csv(f"measurements/{model}-{task}-{method}-{dataset}-{dataset_name}-lstm-training-duration.csv")
@@ -535,20 +535,44 @@ def make_plots(config, target_label, X_train, y_train, X_val, y_val, X_test, y_t
 
 
 def tune(config, X_train, y_train, X_val, y_val, X_test, y_test, task, target_names):
+    print(f"Tuning the model {config['model_name']}")
     config['lstm_input_dim'] = X_train.shape[1]
     config['num_classes'] = len(np.unique(y_train))
     config['lstm_output_dim'] = len(np.unique(y_train))
+    config['sequence_length'] = X_train.shape[1]
     print("num_classes: ", config['num_classes'])
 
-    # model = LSTMClassifier(**config)
+    model_name = config.get('model_name')
+    if model_name == 'pure-lstm':
+        model = PureLSTMClassifier(**config)
+    elif model_name == 'lstm-encoder':
+        model = LSTMClassifier(**config)
 
-    model = PureLSTMClassifier(**config)
+    # model = PureLSTMClassifier(**config)
 
+    # measure train time
+    start_time = time.time()
+
+    plot_data = []
 
     best_model_path = train_lstm(model, X_train, y_train, X_val, y_val, X_test, y_test, config, task)
 
+    end_time = time.time()
+    duration = end_time - start_time
+    plot_data.append({"name": model_name, "task": "training", "dataset": config['dataset'], "method": config['method'], "duration": duration})
+
+    # save the plot data
+    plot_data = pd.DataFrame(plot_data)
+    plot_data.to_csv(f"measurements/{model_name}-{task}-{config['method']}-{config['dataset']}-training-duration.csv")
+
     # base_model = LSTMClassifier.load_from_checkpoint(best_model_path)
-    base_model = PureLSTMClassifier.load_from_checkpoint(best_model_path)
+    # base_model = PureLSTMClassifier.load_from_checkpoint(best_model_path)
+
+    if model_name == 'pure-lstm':
+        base_model = PureLSTMClassifier.load_from_checkpoint(best_model_path)
+    elif model_name == 'lstm-encoder':
+        base_model = LSTMClassifier.load_from_checkpoint(best_model_path)
+
 
     classifier = PyTorchClassifierWrapper(base_model, nn.CrossEntropyLoss(), torch.optim.Adam(base_model.parameters()), epochs=config['max_epochs'])
 
@@ -559,6 +583,11 @@ def tune(config, X_train, y_train, X_val, y_val, X_test, y_test, task, target_na
     report = classification_report(y_test, y_pred, target_names=target_names)
     print("Number of folds: ", config['kfold'])
     print(report)
+
+    dataset_name = config['dataset']
+    method = config['method']
+    model = config['model_name']
+    measure_inference_time(classifier, X_test, model, dataset_name, task, method)
 
 
 def main():

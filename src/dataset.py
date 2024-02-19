@@ -201,13 +201,16 @@ def extract_features(model, data_module=None, train_dataloader=None, val_dataloa
 
     model.eval()
 
+    # encoder = model.module.encoder
+    encoder = model.encoder
+
     with torch.no_grad():
         for batch in tqdm(iter(train_dataloader)):
             segments, batch_labels = batch
             if torch.cuda.is_available():
                 segments = segments.cuda(non_blocking=True)
                 batch_labels = batch_labels.cuda(non_blocking=True)
-            segments_encoded = model.module.encoder(segments).detach()
+            segments_encoded = encoder(segments).detach()
             train_segments.append(segments_encoded)
             train_labels.append(batch_labels)
 
@@ -216,7 +219,7 @@ def extract_features(model, data_module=None, train_dataloader=None, val_dataloa
             if torch.cuda.is_available():
                 segments = segments.cuda(non_blocking=True)
                 batch_labels = batch_labels.cuda(non_blocking=True)
-            segments_encoded = model.module.encoder(segments).detach()
+            segments_encoded = encoder(segments).detach()
             val_segments.append(segments_encoded)
             val_labels.append(batch_labels)
 
@@ -225,7 +228,7 @@ def extract_features(model, data_module=None, train_dataloader=None, val_dataloa
             if torch.cuda.is_available():
                 segments = segments.cuda(non_blocking=True)
                 batch_labels = batch_labels.cuda(non_blocking=True)
-            segments_encoded = model.module.encoder(segments).detach()
+            segments_encoded = encoder(segments).detach()
             test_segments.append(segments_encoded)
             test_labels.append(batch_labels)
 

@@ -94,20 +94,27 @@ def create_measurement_tables(data_dir, dataset_name):
     files = list(Path(data_dir).glob(f'*-{dataset_name}-*.csv'))
     dfs = [pd.read_csv(file) for file in files]
     df = pd.concat(dfs)
-    frame = df.groupby(['name', 'task'])[['name', 'task', 'duration']].agg({'duration': 'mean'})
+    frame = df.groupby(['name', 'task', 'method'])[['name', 'task', 'method', 'duration']].agg({'duration': 'mean'})
 
     frame.reset_index(inplace=True)
-    frame.columns = ['Model', 'Task', 'Duration']
+    print(frame.columns)
+    frame.columns = ['Model', 'Task', 'Method', 'Duration']
+    # change 'encoder' to 'autoencoder' in method column
     frame['Duration'] = frame['Duration'].apply(lambda x: f"{x:.5f}")
     frame['Model'] = frame['Model'].str.replace('_', ' ').str.title()
     frame['Task'] = frame['Task'].str.replace('_', ' ').str.title()
+    frame['Method'] = frame['Method'].str.replace('_', ' ').str.title()
+    frame['Method'] = frame['Method'].str.replace('encoder', 'AE')
+    frame['Task'] = frame['Task'].str.replace('Inference', 'Infer.')
+    frame['Task'] = frame['Task'].str.replace('Training', 'Train')
 
     tasks = frame['Task'].unique()
 
     # Pivot the DataFrame to have separate columns for Inference Time and Training Time
-    df_pivoted = frame.pivot(index='Model', columns='Task', values='Duration').reset_index()
-    df_pivoted.columns.name = None  # Remove the name of the columns index
-    df_pivoted.rename(columns={'Inference': 'Inference (s)', 'Training': 'Training (s)'}, inplace=True)
+    df_pivoted = frame.pivot(index='Model', columns=['Task', 'Method'], values='Duration').reset_index()
+    df_pivoted.columns = df_pivoted.columns.map(lambda x: f"{x[0].title()} {x[1]}" if x[1] else x[0])
+    # df_pivoted.columns.name = None  # Remove the name of the columns index
+    # df_pivoted.rename(columns={'Inference': 'Inference (s)', 'Training': 'Training (s)'}, inplace=True)
 
 
     print(df_pivoted.head())
@@ -118,7 +125,7 @@ def create_measurement_tables(data_dir, dataset_name):
     # remove previous file
     if output_file.exists():
         output_file.unlink()
-    df_pivoted.to_latex(output_file, index=False, escape=False, float_format="%.5f", caption=f"Average inference and training time for each model on {dataset_name.replace('_', ' ').title()}", label=f"tab:{dataset_name}-measurement_report", bold_rows=True, column_format="lcc", position='h')
+    df_pivoted.to_latex(output_file, index=False, escape=False, float_format="%.5f", caption=f"Average inference and training time for each model on {dataset_name.replace('_', ' ').title()}", label=f"tab:{dataset_name}-measurement_report", bold_rows=True, column_format="lcccccc", position='h')
 
 
 def main():

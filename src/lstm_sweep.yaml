@@ -6,26 +6,22 @@ command:
 program: classifier.py
 method: bayes
 metric:
-  goal: maximize
-  name: val_acc
+  goal: minimize
+  name: val_loss
 parameters:
   # dataset
   dataset:
     distribution: categorical
     values:
-      - dataset_d2
+      - dataset_a
   method:
     distribution: categorical
     values:
-      - encoder
-  use_encoder:
-    distribution: categorical
-    values:
-      - false
+      - raw
   target_label:
     distribution: categorical
     values:
-      - device
+      - category
   classifier:
     distribution: categorical
     values:
@@ -34,33 +30,22 @@ parameters:
     distribution: categorical
     values:
       - identification
+  # model
   model_name:
-    distribution: categorical
-    values:
-      - lstm-encoder
-  conv1_out_channels:
+      distribution: categorical
+      values:
+        - pure-lstm
+  lstm_hidden_dim:
     distribution: int_uniform
-    max: 128
+    max: 512
     min: 8
-  conv2_out_channels:
-    distribution: int_uniform
-    max: 128
-    min: 8
-  bottleneck_dim:
-    distribution: int_uniform
-    max: 128
-    min: 8
-  num_lstm_layers:
-    distribution: int_uniform
-    max: 20
-    min: 1
-  dropout:
+  lstm_dropout:
     distribution: uniform
     max: 0.9
     min: 0.01
-  accumulate_grad_batches:
+  lstm_num_layers:
     distribution: int_uniform
-    max: 5
+    max: 20
     min: 1
   batch_size:
     values: [4, 8, 12]
