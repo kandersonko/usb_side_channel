@@ -175,7 +175,7 @@ def encode_dataset_in_batches(model, dataset, num_workers=4, use_cuda=True):
     return torch.cat(encoded_batches).numpy()
 
 
-def extract_features(model, data_module=None, train_dataloader=None, val_dataloader=None, test_dataloader=None):
+def extract_features(model, data_module=None, train_dataloader=None, val_dataloader=None, test_dataloader=None, has_modules=False):
     """
     Extracts the segments and labels from the data module or data loaders
     """
@@ -202,7 +202,11 @@ def extract_features(model, data_module=None, train_dataloader=None, val_dataloa
     model.eval()
 
     # encoder = model.module.encoder
-    encoder = model.encoder
+    encoder = None
+    if has_modules:
+        encoder = model.module.encoder
+    else:
+        encoder = model.encoder
 
     with torch.no_grad():
         for batch in tqdm(iter(train_dataloader)):

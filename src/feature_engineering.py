@@ -146,11 +146,11 @@ def feature_engineering(X, y, target_label, output_file, dataset, subset, config
 
     plot_data.append({"name": "tsfresh", "task": "feature engineering", "dataset": f"{dataset}", "duration": duration})
 
+    plot_data = pd.DataFrame(plot_data)
+    plot_data.to_csv(f'measurements/{dataset}-{subset}-tsfresh-feature-engineering-duration.csv')
+
     if not benchmarking:
         # save the plot data
-        plot_data = pd.DataFrame(plot_data)
-        plot_data.to_csv(f'measurements/{dataset}-{subset}-tsfresh-feature-engineering-duration.csv')
-
         print(features_filtered.head())
 
         # save the features with the labels concatenated

@@ -49,6 +49,7 @@ def main():
     print("Setting up the model")
 
     best_model_path = config['model_path']
+    print(f"Loading the model from {best_model_path}")
 
     model = None
     if config['model_path'] is not None and config['model_path'] != '':
@@ -79,12 +80,6 @@ def main():
         if torch.cuda.is_available():
             device = torch.device("cuda:0")
             model = model.to(device)
-            X_train = X_train.to(device)
-            X_val = X_val.to(device)
-            X_test = X_test.to(device)
-            y_train = y_train.to(device)
-            y_val = y_val.to(device)
-            y_test = y_test.to(device)
 
     else:
         model = model.cpu()
@@ -105,15 +100,13 @@ def main():
         train_dataloader=train_loader,
         val_dataloader=val_loader,
         test_dataloader=test_loader,
+        has_modules=True,
     )
 
     end_time = time.time()
     duration = end_time - start_time
     plot_data.append({"name": "autoencoder", "task": "extract features", "dataset": f"{dataset_name}", "duration": duration})
-    folder = 'measurements'
-    if not os.path.exists(folder):
-        os.makedirs(folder)
-    filename = Path(f'{folder}/{dataset_name}-{subset}-autoencoder-feature-extraction-duration.csv')
+    filename = Path(f'measurements/{dataset_name}-{subset}-autoencoder-feature-extraction-duration.csv')
 
     # save the plot data
     plot_data = pd.DataFrame(plot_data)

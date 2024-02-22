@@ -8,8 +8,6 @@ metric:
   goal: minimize
   name: val_loss
 parameters:
-  batch_size:
-    values: [4, 8, 12]
   bottleneck_dim:
     distribution: int_uniform
     max: 256
@@ -26,8 +24,14 @@ parameters:
     distribution: uniform
     max: 0.9
     min: 0.01
+  batch_size:
+    values: [8, 16, 32]
+  accumulate_grad_batches:
+    distribution: int_uniform
+    max: 5
+    min: 1
   learning_rate:
-    values: [1e-1, 1e-2, 1e-3, 1e-4, 1e-5, 1e-6]
+    values: [1e-3]
   log:
     values:
       - true
@@ -51,8 +55,4 @@ parameters:
     distribution: int_uniform
     max: 20
     min: 1
-  reconstruction_loss_weight:
-    distribution: uniform
-    max: 2
-    min: 0.01
 program: train.py

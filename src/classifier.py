@@ -2,11 +2,13 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import time
+from datetime import datetime
 
 from tqdm import tqdm
 
 from lightning.pytorch.loggers import WandbLogger
 import wandb
+from wandb import AlertLevel
 
 from tsfresh import select_features
 
@@ -52,6 +54,7 @@ from sklearn.tree import DecisionTreeClassifier
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.svm import SVC
 
+torch.multiprocessing.set_sharing_strategy('file_system')
 
 def plot_roc_auc(y_test, y_proba, target_names, model, dataset_name, dataset, task, method):
     # Number of classes
@@ -147,11 +150,13 @@ def train_lstm(classifier, X_train, y_train, X_val, y_val, X_test, y_test, confi
         logging_interval='epoch', log_momentum=True)
     learning_rate_finder = LearningRateFinder()
 
+    date_time = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+
     checkpoint_callback = ModelCheckpoint(
         # or another metric such as 'val_accuracy'
         monitor=config['monitor_metric'],
         dirpath=config['checkpoint_path'],
-        filename=f"{config['model_name']}-{config['dataset']}-{config['method']}" + '-{epoch:02d}-{val_loss:.2f}-{val_acc:.2f}',
+        filename=f"{config['model_name']}-{config['dataset']}-{config['method']}" + '-{epoch:02d}-{val_loss:.2f}-{val_acc:.2f}-'+date_time,
         save_top_k=1,
         mode='min',  # 'min' for loss and 'max' for accuracy
     )
@@ -163,6 +168,9 @@ def train_lstm(classifier, X_train, y_train, X_val, y_val, X_test, y_test, confi
         learning_rate_finder,
     ]
     torch.set_float32_matmul_precision('medium')
+    if torch.cuda.is_available():
+        print("Available GPU devices: ", torch.cuda.device_count())
+
     trainer = pl.Trainer(
         # accumulate_grad_batches=config['ACCUMULATE_GRAD_BATCHES'],
         log_every_n_steps=4,
@@ -170,7 +178,7 @@ def train_lstm(classifier, X_train, y_train, X_val, y_val, X_test, y_test, confi
         max_epochs=config['max_epochs'],
         min_epochs=config['min_epochs'],
         accelerator="gpu",
-        devices=-1,
+        devices=len(list(range(torch.cuda.device_count()))),
         strategy='ddp',
         logger=config['logger'],
         callbacks=callbacks,
@@ -224,11 +232,13 @@ def evaluate_lstm(X_train, y_train, X_val, y_val, config, fold):
         logging_interval='epoch', log_momentum=True)
     learning_rate_finder = LearningRateFinder()
 
+    date_time = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+
     checkpoint_callback = ModelCheckpoint(
         # or another metric such as 'val_accuracy'
         monitor=config['monitor_metric'],
         dirpath='./checkpoints',
-        filename='classifier-' + f"{dataset_name}-{fold}" +'-{epoch:02d}-{val_loss:.2f}-{val_acc:.2f}',
+        filename='classifier-' + f"{dataset_name}-{fold}" +'-{epoch:02d}-{val_loss:.2f}-{val_acc:.2f}-'+date_time,
         save_top_k=1,
         mode='min',  # 'min' for loss and 'max' for accuracy
     )
@@ -417,10 +427,12 @@ def measure_inference_time(classifier, X_test, model, dataset_name, task, method
         yhat = classifier.predict(sample)
     end_time = time.time()
     duration = end_time - start_time
+    print(f"Inference time: {duration:.4f} seconds")
     plot_data.append({"name": model, "task": "inference", "dataset": dataset_name, "method": method, "duration": duration})
     # save the plot data
     plot_data = pd.DataFrame(plot_data)
     plot_data.to_csv(f"measurements/{model}-{task}-{method}-{dataset_name}-inference-duration.csv")
+    return duration
 
 
 def make_plots(config, target_label, X_train, y_train, X_val, y_val, X_test, y_test, target_names, method, dataset='features', dataset_name='dataset_a'):
@@ -584,10 +596,32 @@ def tune(config, X_train, y_train, X_val, y_val, X_test, y_test, task, target_na
     print("Number of folds: ", config['kfold'])
     print(report)
 
+
     dataset_name = config['dataset']
     method = config['method']
     model = config['model_name']
-    measure_inference_time(classifier, X_test, model, dataset_name, task, method)
+    print(f"Training duration: {duration:.4f} seconds")
+    inference_duration = measure_inference_time(classifier, X_test, model, dataset_name, task, method)
+
+    report = classification_report(y_test, y_pred, target_names=target_names, output_dict=True)
+    # log to wandb
+    wandb.log({"f1_score": report['weighted avg']['f1-score']})
+    wandb.log({"precision": report['weighted avg']['precision']})
+    wandb.log({"recall": report['weighted avg']['recall']})
+    wandb.log({"accuracy": accuracy})
+    wandb.log({"training_duration": duration})
+    wandb.log({"inference_duration": inference_duration})
+
+    f1_score = report['weighted avg']['f1-score']
+
+    if f1_score > 0.95:
+        print(f"F1 score is greater than 0.95 (value: {f1_score}).")
+        wandb.alert(
+            title="F1 score is greater than 0.95",
+            text=f"F1 score value is {f1_score}. \nModel: {model_name}, Dataset: {config['dataset']}, Method: {config['method']}, Using encoder: {config['use_encoder']}",
+            level=AlertLevel.WARN,
+            wait_duration=300,
+        )
 
 
 def main():

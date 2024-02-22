@@ -3,6 +3,7 @@
 import os
 
 import numpy as np
+from datetime import datetime
 
 from sklearn.ensemble import RandomForestClassifier
 
@@ -85,12 +86,13 @@ def main():
         logging_interval='epoch', log_momentum=True)
 
     # input_monitor = InputMonitor()
+    date_time = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
 
     checkpoint_callback = ModelCheckpoint(
         # or another metric such as 'val_accuracy'
         monitor=config['monitor_metric'],
         dirpath=config['checkpoint_path'],
-        filename='new_model-{epoch:02d}-{val_loss:.2f}',
+        filename='autoencoder-{epoch:02d}-{val_loss:.2f}-'+date_time,
         save_top_k=1,
         mode='min',  # 'min' for loss and 'max' for accuracy
     )
@@ -209,6 +211,7 @@ def main():
             train_dataloader=train_loader,
             val_dataloader=val_loader,
             test_dataloader=test_loader,
+            has_modules=True
         )
 
     if trainer.is_global_zero:

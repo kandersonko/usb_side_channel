@@ -2,11 +2,9 @@
 #SBATCH --job-name=features
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --ntasks-per-node=1
-#SBATCH --cpus-per-task=4
-#SBATCH --mem=96G
-#SBATCH --partition=long
-#SBATCH --time=08:00:00
+#SBATCH -p gpu-long
+#SBATCH --gres=gpu:a6000:1
+#SBATCH --time=02:00:00
 #SBATCH --output=jobs/features_%A_%a.stdout
 #SBATCH --error=jobs/features_%A_%a.stderr
 
@@ -27,11 +25,13 @@ conda activate usb2
 python --version
 which python
 
+# run feature extraction
+# srun ./run_extraction.sh
+srun --exclusive --gres=gpu:a6000:1 -l ./run_extraction.sh
+
 # run feature engineering
 srun ./run_tsfresh.sh
 
-# run feature extraction
-srun ./run_extraction.sh
 
 
 wait

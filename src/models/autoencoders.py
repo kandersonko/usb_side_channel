@@ -83,6 +83,7 @@ class PureAutoencoder(pl.LightningModule):
         total_loss = self.reconstruction_loss_fn(x_hat, x)
 
         self.log('train_loss', total_loss, sync_dist=True, prog_bar=True)
+        self.log('learning_rate', self.learning_rate, sync_dist=True, prog_bar=True)
         return total_loss
 
 
@@ -213,6 +214,7 @@ class Autoencoder(pl.LightningModule):
         self.log('train_accuracy', self.train_accuracy, sync_dist=True, prog_bar=True)
         self.log('train_recon_loss', reconstruction_loss, sync_dist=True)
         self.log('train_class_loss', classification_loss, sync_dist=True)
+        self.log('learning_rate', self.learning_rate, sync_dist=True, prog_bar=True)
         return total_loss
 
 
@@ -563,12 +565,12 @@ class CNNLSTMDecoder(nn.Module):
         # self.conv1 = nn.Conv1d(in_channels=hidden_size, out_channels=conv1_out_channels, kernel_size=3, stride=1, padding=1)
         self.conv1 = nn.Conv1d(in_channels=hidden_size*2, out_channels=conv1_out_channels, kernel_size=3, stride=1, padding=1) # multiply by 2 because of bidirectional
 
-        self.bn1 = nn.BatchNorm1d(conv1_out_channels)
+        # self.bn1 = nn.BatchNorm1d(conv1_out_channels)
 
         self.upsample2 = nn.Upsample(size=sequence_length)
         self.conv2 = nn.Conv1d(in_channels=conv1_out_channels, out_channels=conv2_out_channels, kernel_size=3, stride=1, padding=1)
 
-        self.bn2 = nn.BatchNorm1d(conv2_out_channels)
+        # self.bn2 = nn.BatchNorm1d(conv2_out_channels)
 
         self.conv3 = nn.Conv1d(in_channels=conv2_out_channels, out_channels=1, kernel_size=3, stride=1, padding=1)
 
@@ -603,13 +605,13 @@ class CNNLSTMDecoder(nn.Module):
         x = self.upsample1(x)
         # x = torch.relu(self.bn1(self.conv1(x)))
         x = self.conv1(x)
-        x = self.bn1(x)
+        # x = self.bn1(x)
         x = torch.relu(x)
 
         x = self.upsample2(x)
         # x = torch.relu(self.bn2(self.conv2(x)))
         x = self.conv2(x)
-        x = self.bn2(x)
+        # x = self.bn2(x)
         x = torch.relu(x)
 
 

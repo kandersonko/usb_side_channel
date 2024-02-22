@@ -5,7 +5,7 @@
 classifier="lstm"
 
 dataset="dataset_b"
-method="encoder"
+method="raw"
 target_label="device"
 
 max_epochs=100
