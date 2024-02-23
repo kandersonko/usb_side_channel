@@ -1,8 +1,8 @@
 #!/usr/bin/env sh
 #SBATCH --job-name=wandb-sweep
 #SBATCH --nodes=1
-#SBATCH -p gpu-8
-#SBATCH --gres=gpu:a6000:2
+#SBATCH -p gpu-volatile
+#SBATCH --gres=gpu:a100:2
 #SBATCH --time=08:00:00
 #SBATCH --output=jobs/sweep_%A_%a.stdout
 #SBATCH --error=jobs/sweep_%A_%a.stderr
@@ -29,8 +29,28 @@ echo "CUDA_VISIBLE_DEVICES: $CUDA_VISIBLE_DEVICES"
 
 nvidia-smi -L
 
-sweep_id=ab742rfe
-
 # srun --exclusive -l wandb agent koffi-anderson/usb_side_channel/${sweep_id}
-wandb agent koffi-anderson/usb_side_channel/${sweep_id}
 # srun --exclusive --gres=gpu:a100:2 -l wandb agent koffi-anderson/usb_side_channel/${sweep_id}
+
+sweep_id=fdo8h8t6
+
+wandb agent koffi-anderson/usb_side_channel/${sweep_id}
+
+
+# # dataset b tsfresh
+# wandb agent --count 20 koffi-anderson/usb_side_channel/9tcucqwm
+
+# # dataset c1 tsfresh
+# wandb agent --count 20 koffi-anderson/usb_side_channel/fdo8h8t6
+
+# # dataset d1 tsfresh
+# wandb agent --count 20 koffi-anderson/usb_side_channel/c5e8baot
+
+# # dataset d2 tsfresh
+# wandb agent --count 20 koffi-anderson/usb_side_channel/olj9d481
+
+# # # dataset a encoder
+# wandb agent --count 20 koffi-anderson/usb_side_channel/x2ybywkr
+
+# # # dataset c1 encoder
+# wandb agent --count 20 koffi-anderson/usb_side_channel/pbtfqo9m

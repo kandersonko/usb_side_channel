@@ -150,7 +150,7 @@ def train_lstm(classifier, X_train, y_train, X_val, y_val, X_test, y_test, confi
         logging_interval='epoch', log_momentum=True)
     learning_rate_finder = LearningRateFinder()
 
-    date_time = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+    date_time = datetime.now().strftime("%Y-%m-%d-%H-%M")
 
     checkpoint_callback = ModelCheckpoint(
         # or another metric such as 'val_accuracy'
@@ -232,7 +232,7 @@ def evaluate_lstm(X_train, y_train, X_val, y_val, config, fold):
         logging_interval='epoch', log_momentum=True)
     learning_rate_finder = LearningRateFinder()
 
-    date_time = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+    date_time = datetime.now().strftime("%Y-%m-%d-%H-%M")
 
     checkpoint_callback = ModelCheckpoint(
         # or another metric such as 'val_accuracy'
@@ -547,6 +547,10 @@ def make_plots(config, target_label, X_train, y_train, X_val, y_val, X_test, y_t
 
 
 def tune(config, X_train, y_train, X_val, y_val, X_test, y_test, task, target_names):
+
+    if config['logger'] is None:
+        wandb_logger = WandbLogger(project="usb_side_channel", config=config)
+        config['logger'] = logger
     print(f"Tuning the model {config['model_name']}")
     config['lstm_input_dim'] = X_train.shape[1]
     config['num_classes'] = len(np.unique(y_train))
@@ -614,7 +618,7 @@ def tune(config, X_train, y_train, X_val, y_val, X_test, y_test, task, target_na
 
     f1_score = report['weighted avg']['f1-score']
 
-    if f1_score > 0.95:
+    if f1_score >= 0.95:
         print(f"F1 score is greater than 0.95 (value: {f1_score}).")
         wandb.alert(
             title="F1 score is greater than 0.95",
@@ -641,6 +645,7 @@ def main():
         config['checkpoint_path'] = 'checkpoints'
 
     logger = None
+    wandb.init(project="usb_side_channel", config=config)
     wandb_logger = WandbLogger(project="usb_side_channel", config=config)
     if log or tuning:
         logger = wandb_logger

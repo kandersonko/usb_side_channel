@@ -86,7 +86,7 @@ def main():
         logging_interval='epoch', log_momentum=True)
 
     # input_monitor = InputMonitor()
-    date_time = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+    date_time = datetime.now().strftime("%Y-%m-%d-%H-%M")
 
     checkpoint_callback = ModelCheckpoint(
         # or another metric such as 'val_accuracy'
