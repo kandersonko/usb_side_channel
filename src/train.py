@@ -112,7 +112,7 @@ def main():
 
 
     trainer = pl.Trainer(
-        # accumulate_grad_batches=config['ACCUMULATE_GRAD_BATCHES'],
+        accumulate_grad_batches=config.get('accumulate_grad_batches'),
         num_sanity_val_steps=0,
         max_epochs=config['max_epochs'],
         min_epochs=config['min_epochs'],

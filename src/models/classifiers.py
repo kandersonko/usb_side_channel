@@ -171,19 +171,22 @@ class LSTMClassifier(pl.LightningModule):
         self.use_encoder = use_encoder
 
         self.encoder = None
+        fc_input_size = hidden_size
         if use_encoder:
             self.encoder = LSTMEncoder(input_size=input_size, hidden_size=hidden_size, num_layers=num_lstm_layers, dropout=dropout, sequence_length=sequence_length, num_features=1, conv1_out_channels=conv1_out_channels, conv2_out_channels=conv2_out_channels)
         else:
+            fc_input_size = hidden_size * 2
             self.encoder = nn.LSTM(
                 input_size=sequence_length,
                 hidden_size=bottleneck_dim,
                 num_layers=num_lstm_layers,
                 batch_first=True,
                 dropout=dropout,
-                bidirectional=False
+                bidirectional=True
             )
 
-        self.fc = nn.Linear(hidden_size, num_classes)
+        # self.bottleneck = nn.Linear(fc_input_size, fc_input_size)
+        self.fc = nn.Linear(fc_input_size, num_classes)
         self.dropout = nn.Dropout(dropout)
         self.accuracy = Accuracy(task='multiclass', num_classes=num_classes)
 
@@ -198,6 +201,7 @@ class LSTMClassifier(pl.LightningModule):
         if not self.use_encoder:
             x, _ = x
         x = self.dropout(x)
+        # x = self.bottleneck(x)
         x = self.fc(x)
         x = x.squeeze(1)
         return x

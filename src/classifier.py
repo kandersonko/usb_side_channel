@@ -180,7 +180,7 @@ def train_lstm(classifier, X_train, y_train, X_val, y_val, X_test, y_test, confi
         accelerator="gpu",
         devices=len(list(range(torch.cuda.device_count()))),
         strategy='ddp',
-        logger=config['logger'],
+        logger=config.get('logger'),
         callbacks=callbacks,
         precision="32-true",
         # precision="16-mixed",
@@ -548,9 +548,9 @@ def make_plots(config, target_label, X_train, y_train, X_val, y_val, X_test, y_t
 
 def tune(config, X_train, y_train, X_val, y_val, X_test, y_test, task, target_names):
 
-    if config['logger'] is None:
-        wandb_logger = WandbLogger(project="usb_side_channel", config=config)
-        config['logger'] = logger
+    # if config.get('logger') is None:
+    #     wandb_logger = WandbLogger(project="usb_side_channel", config=config)
+    #     config['logger'] = logger
     print(f"Tuning the model {config['model_name']}")
     config['lstm_input_dim'] = X_train.shape[1]
     config['num_classes'] = len(np.unique(y_train))
@@ -645,12 +645,14 @@ def main():
         config['checkpoint_path'] = 'checkpoints'
 
     logger = None
-    wandb.init(project="usb_side_channel", config=config)
-    wandb_logger = WandbLogger(project="usb_side_channel", config=config)
-    if log or tuning:
-        logger = wandb_logger
 
-    config['logger'] = logger
+    # wandb.init(project="usb_side_channel", config=config)
+    # wandb_logger = WandbLogger(project="usb_side_channel", config=config)
+
+    # if log or tuning:
+    #     logger = wandb_logger
+
+    # config['logger'] = logger
 
     # if config['features'] is None:
     #     raise ValueError("Provide a model path")

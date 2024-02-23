@@ -17,11 +17,12 @@ parameters:
   method:
     distribution: categorical
     values:
-      - raw
+      - encoder
   use_encoder:
     distribution: categorical
     values:
       - true
+      - false
   target_label:
     distribution: categorical
     values:
@@ -40,31 +41,27 @@ parameters:
       - lstm-encoder
   conv1_out_channels:
     distribution: int_uniform
-    max: 256
+    max: 128
     min: 8
   conv2_out_channels:
     distribution: int_uniform
-    max: 256
+    max: 128
     min: 8
   bottleneck_dim:
     distribution: int_uniform
-    max: 256
+    max: 128
     min: 8
   num_lstm_layers:
     distribution: int_uniform
-    max: 20
+    max: 10
     min: 1
   dropout:
     distribution: uniform
     max: 0.9
     min: 0.01
-  accumulate_grad_batches:
-    distribution: int_uniform
-    max: 5
-    min: 1
   batch_size:
-    values: [8, 16, 32]
-    # values: [16, 32, 64, 96, 128]
+    # values: [8, 16, 32]
+    values: [32, 64, 128]
   learning_rate:
     values: [1e-3]
   log:
@@ -80,7 +77,7 @@ parameters:
   min_epochs:
     distribution: categorical
     values:
-      - 20
+      - 100
   monitor_metric:
     distribution: categorical
     values:
