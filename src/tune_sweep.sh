@@ -2,8 +2,8 @@
 #SBATCH --job-name=wandb-sweep
 #SBATCH --nodes=1
 #SBATCH -p gpu-long
-#SBATCH --gres=gpu:titanrtx:2
-#SBATCH --time=08:00:00
+#SBATCH --gres=gpu:titanrtx:1
+#SBATCH --time=12:00:00
 #SBATCH --output=jobs/sweep_%A_%a.stdout
 #SBATCH --error=jobs/sweep_%A_%a.stderr
 
@@ -33,7 +33,13 @@ nvidia-smi -L
 # srun --exclusive --gres=gpu:a100:2 -l wandb agent koffi-anderson/usb_side_channel/${sweep_id}
 
 # sweep_id=1gb0mrkb
-sweep_id=ye01bxcz
+# sweep_id=ye01bxcz
+# sweep_id=pvwr4xmn
+
+# sweep_id=be1q99nr #dataset_c1-encoder
+# sweep_id=uq6tk3r9 # dataset_c2-encoder
+sweep_id=bk4hntik # dataset_d1-encoder
+# sweep_id=zcnzxcso # dataset_d2-encoder
 
 wandb agent koffi-anderson/usb_side_channel/${sweep_id}
 

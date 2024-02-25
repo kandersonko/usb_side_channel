@@ -16,6 +16,7 @@ from config import default_config as config
 from sklearn.base import BaseEstimator, ClassifierMixin
 from sklearn.model_selection import cross_val_predict
 
+
 class PyTorchClassifierWrapper(BaseEstimator, ClassifierMixin):
     def __init__(self, model, criterion, optimizer, epochs=10):
         # move the model to the gpu
@@ -64,78 +65,6 @@ class PyTorchClassifierWrapper(BaseEstimator, ClassifierMixin):
         return outputs.cpu().numpy()
 
 
-class PureLSTMClassifier(pl.LightningModule):
-    def __init__(self, lstm_input_dim, lstm_hidden_dim, lstm_output_dim, lstm_num_layers, lstm_dropout, lstm_bidirectional, num_classes, learning_rate, learning_rate_patience, batch_size, monitor_metric, **kwargs):
-        super().__init__()
-        self.save_hyperparameters()
-        self.monitor = monitor_metric
-
-        self.learning_rate_patience = learning_rate_patience
-        self.learning_rate = learning_rate
-        self.batch_size = batch_size
-
-        self.lstm = nn.LSTM(input_size=lstm_input_dim,
-                            hidden_size=lstm_hidden_dim,
-                            num_layers=lstm_num_layers,
-                            batch_first=True,
-                            dropout=lstm_dropout, bidirectional=lstm_bidirectional)
-        self.classifier = nn.Linear(lstm_hidden_dim, lstm_output_dim)
-        self.loss_function = nn.CrossEntropyLoss()
-        self.accuracy = Accuracy(task='multiclass', num_classes=num_classes)
-
-    def forward(self, x):
-        lstm_out, _ = self.lstm(x)
-        # import pdb; pdb.set_trace()
-        x = self.classifier(lstm_out)
-        x = x.squeeze(1)
-        return x
-
-    def training_step(self, batch, batch_idx):
-        x, y = batch
-        y_hat = self(x)
-        loss = self.loss_function(y_hat, y)
-        self.log('train_loss', loss, sync_dist=True, prog_bar=True)
-        self.log('train_acc', self.accuracy(y_hat, y), sync_dist=True, prog_bar=True)
-        self.log('learning_rate', self.learning_rate, sync_dist=True, prog_bar=True)
-
-        return loss
-
-
-    def validation_step(self, batch, batch_idx):
-        x, y = batch
-        y_hat = self(x)
-        loss = self.loss_function(y_hat, y)
-        self.log('val_loss', loss, sync_dist=True, prog_bar=True)
-        self.log('val_acc', self.accuracy(y_hat, y), sync_dist=True, prog_bar=True)
-        return loss
-
-    def test_step(self, batch, batch_idx):
-        x, y = batch
-        y_hat = self(x)
-        loss = self.loss_function(y_hat, y)
-        self.log('test_loss', loss, sync_dist=True, prog_bar=True)
-        self.log('test_acc', self.accuracy(y_hat, y), sync_dist=True, prog_bar=True)
-        return loss
-
-
-    def predict_step(self, batch, batch_idx, dataloader_idx=None):
-        x, y = batch
-        y_hat = self(x)
-        return y_hat
-
-
-    def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.parameters(), lr=self.learning_rate)
-        monitor = self.monitor
-        scheduler = {
-            'scheduler': ReduceLROnPlateau(optimizer, patience=self.learning_rate_patience, verbose=False),
-            'interval': 'epoch',  # or 'step'
-            'frequency': 1,
-            'monitor': monitor,  # Name of the metric to monitor
-        }
-        return [optimizer], [scheduler]
-
-
 
 # Create a LSTM classifier
 class LSTMClassifier(pl.LightningModule):
@@ -152,42 +81,69 @@ class LSTMClassifier(pl.LightningModule):
             learning_rate_patience,
             conv1_out_channels,
             conv2_out_channels,
+            lstm_bidirectional,
             use_encoder=False,
+            base_model="simple",
             **kwargs,
     ):
         super().__init__()
         self.save_hyperparameters()
 
+
         self.monitor = monitor_metric
         self.learning_rate_patience = learning_rate_patience
         hidden_size = bottleneck_dim
+        self.hidden_size = hidden_size
         input_size = sequence_length
         self.learning_rate = learning_rate
-        self.hidden_size = hidden_size
         num_layers = num_lstm_layers
         self.num_layers = num_lstm_layers
         self.batch_size = batch_size
 
         self.use_encoder = use_encoder
 
-        self.encoder = None
-        fc_input_size = hidden_size
-        if use_encoder:
-            self.encoder = LSTMEncoder(input_size=input_size, hidden_size=hidden_size, num_layers=num_lstm_layers, dropout=dropout, sequence_length=sequence_length, num_features=1, conv1_out_channels=conv1_out_channels, conv2_out_channels=conv2_out_channels)
-        else:
-            fc_input_size = hidden_size * 2
-            self.encoder = nn.LSTM(
-                input_size=sequence_length,
-                hidden_size=bottleneck_dim,
+        self.model = None
+        if base_model == "encoder" or use_encoder:
+            self.model = nn.Sequential(
+                LSTMEncoder(input_size=input_size, hidden_size=hidden_size, num_layers=num_lstm_layers, dropout=dropout, sequence_length=sequence_length, num_features=1, conv1_out_channels=conv1_out_channels, conv2_out_channels=conv2_out_channels),
+                nn.Linear(hidden_size, num_classes)
+            )
+        elif base_model == "lstm":
+            self.model = SimpleLSTM(
+                input_size=input_size,
+                hidden_size=hidden_size,
                 num_layers=num_lstm_layers,
-                batch_first=True,
+                num_classes=num_classes,
                 dropout=dropout,
-                bidirectional=True
+                bidirectional=lstm_bidirectional
             )
 
-        # self.bottleneck = nn.Linear(fc_input_size, fc_input_size)
-        self.fc = nn.Linear(fc_input_size, num_classes)
-        self.dropout = nn.Dropout(dropout)
+        elif base_model == "cnn_lstm":
+            self.model = CNN_LSTM(input_size=1, hidden_size=hidden_size,
+                                    num_layers=num_lstm_layers, num_classes=num_classes,
+                                    conv1_out_channels=conv1_out_channels,
+                                    conv2_out_channels=conv2_out_channels, dropout=dropout)
+
+        elif base_model == "lstm_cnn":
+            self.model = LSTM_CNN(
+                input_size=input_size, hidden_size=hidden_size,
+                num_layers=num_lstm_layers, num_classes=num_classes,
+                conv1_out_channels=conv1_out_channels,
+                conv2_out_channels=conv2_out_channels, dropout=dropout)
+
+        elif base_model == "parallel_cnn_lstm":
+            self.model = Parallel_CNN_LSTM(
+                input_size=input_size,
+                hidden_size=hidden_size,
+                num_layers=num_lstm_layers,
+                num_classes=num_classes,
+                conv1_out_channels=conv1_out_channels,
+                conv2_out_channels=conv2_out_channels,
+                dropout=dropout)
+        else:
+            raise ValueError("Invalid base model. Choose from 'encoder', 'lstm', 'cnn_lstm', 'lstm_cnn', 'parallel_cnn_lstm'")
+
+        # self.dropout = nn.Dropout(dropout)
         self.accuracy = Accuracy(task='multiclass', num_classes=num_classes)
 
         self.example_input_array = torch.rand(self.batch_size, sequence_length)
@@ -195,15 +151,8 @@ class LSTMClassifier(pl.LightningModule):
 
 
     def forward(self, x):
-        # x = x.unsqueeze(1)
-        # import pdb; pdb.set_trace()
-        x = self.encoder(x)
-        if not self.use_encoder:
-            x, _ = x
-        x = self.dropout(x)
-        # x = self.bottleneck(x)
-        x = self.fc(x)
-        x = x.squeeze(1)
+        x = self.model(x)
+        # x = x.squeeze(1)
         return x
 
 
@@ -248,6 +197,20 @@ class LSTMClassifier(pl.LightningModule):
             'monitor': monitor,  # Name of the metric to monitor
         }
         return [optimizer], [scheduler]
+
+    # def setup(self, stage):
+    #     # from https://github.com/Lightning-AI/pytorch-lightning/issues/13764
+    #     match stage:
+    #         case 'fit':
+    #             dataloader = self.trainer.datamodule.train_dataloader()
+    #         case 'validate':
+    #             dataloader = self.trainer.datamodule.val_dataloader()
+    #         case 'test':
+    #             dataloader = self.trainer.datamodule.test_dataloader()
+    #         case 'predict':
+    #             dataloader = self.trainer.datamodule.predict_dataloader()
+    #     dummy_batch = next(iter(dataloader))
+    #     self.forward(dummy_batch)
 
 
 class Attention(nn.Module):
@@ -328,7 +291,7 @@ class LSTMEncoder(nn.Module):
         x = torch.relu(x)
         x = self.pool(x)
 
-        x = self.dropout(x)
+        # x = self.dropout(x)
 
         x = self.conv2(x)
         # x = self.bn2(x)
@@ -336,7 +299,7 @@ class LSTMEncoder(nn.Module):
 
         x = self.pool(x)
 
-        x = self.dropout(x)
+        # x = self.dropout(x)
 
         # Reshape for LSTM
         x = x.transpose(1, 2)  # Swap channel and sequence_length dimensions
@@ -351,3 +314,147 @@ class LSTMEncoder(nn.Module):
         x = x.contiguous().view(x.size(0), -1)
         x = self.fc(x)
         return x
+
+
+
+class SimpleLSTM(nn.Module):
+    def __init__(self, input_size, hidden_size, num_layers, num_classes, dropout, bidirectional=True):
+        super(SimpleLSTM, self).__init__()
+        self.lstm = nn.LSTM(input_size=input_size, hidden_size=hidden_size, num_layers=num_layers, batch_first=True, bidirectional=bidirectional)
+        self.fc = None
+        if bidirectional:
+            self.fc = nn.Linear(hidden_size*2, num_classes)
+        else:
+            self.fc = nn.Linear(hidden_size, num_classes)
+
+    def forward(self, x):
+        out, _ = self.lstm(x)
+        # out = self.fc(out[:, -1, :])
+        out = self.fc(out)
+        return out
+
+
+class CNN_LSTM(nn.Module):
+    def __init__(self, input_size, hidden_size, num_layers, num_classes,
+                 conv1_out_channels,
+                 conv2_out_channels, dropout):
+        super(CNN_LSTM, self).__init__()
+        self.cnn = nn.Sequential(
+            nn.Conv1d(in_channels=input_size,
+                      out_channels=conv1_out_channels,
+                      kernel_size=3, stride=1, padding=1),
+            nn.ReLU(),
+            nn.MaxPool1d(kernel_size=2, stride=2),
+            nn.Conv1d(in_channels=conv1_out_channels, out_channels=conv2_out_channels,
+                      kernel_size=3, stride=1, padding=1),
+            nn.ReLU(),
+            nn.MaxPool1d(kernel_size=2, stride=2)
+        )
+        self.lstm = nn.LSTM(input_size=conv2_out_channels,
+                            hidden_size=hidden_size,
+                            num_layers=num_layers, batch_first=True)
+        self.fc = nn.Linear(hidden_size, num_classes)
+
+    def forward(self, x):
+        #cnn takes input of shape (batch_size, channels, seq_len)
+        x = x.unsqueeze(1)
+        # x = x.permute(0, 2, 1)
+        x = self.cnn(x)
+        # lstm takes input of shape (batch_size, seq_len, input_size)
+        x = x.permute(0, 2, 1)
+        # x = x.transpose(1, 2)  # Swap channel and sequence_length dimensions
+        x, _ = self.lstm(x)
+
+        # Reshape and apply linear layer
+        # x = x.contiguous().view(x.size(0), -1)
+        x = self.fc(x[:, -1, :])
+        # x = self.fc(x)
+        return x
+
+
+class LSTM_CNN(nn.Module):
+    def __init__(self, input_size, hidden_size, num_layers, num_classes,
+                 conv1_out_channels, conv2_out_channels, dropout):
+        super().__init__()
+        self.num_classes = num_classes
+        self.conv1_out_channels = conv1_out_channels
+        self.conv2_out_channels = conv2_out_channels
+        self.hidden_size = hidden_size
+
+        self.lstm = nn.LSTM(input_size=input_size, hidden_size=hidden_size, num_layers=num_layers, batch_first=True)
+        self.cnn = nn.Sequential(
+            nn.Conv1d(in_channels=hidden_size, out_channels=conv1_out_channels,
+                      kernel_size=3, stride=1, padding=1),
+            nn.ReLU(),
+            nn.MaxPool1d(kernel_size=2, stride=2),
+            nn.Conv1d(in_channels=conv1_out_channels, out_channels=conv2_out_channels,
+                      kernel_size=3, stride=1, padding=1),
+            nn.ReLU(),
+            nn.MaxPool1d(kernel_size=2, stride=2),
+            nn.Flatten(),
+            # nn.LazyLinear(out_features=2*conv2_out_channels),
+            # nn.ReLU(),
+            # nn.Linear(in_features=2*conv2_out_channels, out_features=num_classes)
+        )
+        self.cnn_output_size = input_size // 2 // 2
+        self.fc = nn.Sequential(
+            nn.Linear(self.cnn_output_size*self.conv2_out_channels, self.hidden_size),
+            nn.ReLU(),
+            nn.Linear(in_features=self.hidden_size, out_features=self.num_classes)
+        )
+
+    def forward(self, x):
+        # import pdb; pdb.set_trace()
+        x = x.unsqueeze(2)
+        # lstm takes input of shape (batch_size, seq_len, input_size)
+        x, _ = self.lstm(x)
+        #cnn takes input of shape (batch_size, channels, seq_len)
+        x = x.permute(0, 2, 1)
+        x = self.cnn(x)
+        x = self.fc(x)
+        return x
+
+
+class Parallel_CNN_LSTM(nn.Module):
+    def __init__(self, input_size, hidden_size, num_layers, num_classes,
+                 conv1_out_channels, conv2_out_channels, dropout):
+        super().__init__()
+        self.cnn = nn.Sequential(
+            nn.Conv1d(in_channels=1, out_channels=conv1_out_channels,
+                      kernel_size=3, stride=1, padding=1),
+            nn.ReLU(),
+            nn.MaxPool1d(kernel_size=2, stride=2),
+            nn.Conv1d(in_channels=conv1_out_channels, out_channels=conv2_out_channels,
+                      kernel_size=3, stride=1, padding=1),
+            nn.ReLU(),
+            nn.MaxPool1d(kernel_size=2, stride=2),
+            nn.Flatten(),
+            # nn.LazyLinear(out_features=conv2_out_channels),
+            # nn.ReLU()
+        )
+
+        cnn_output_size = input_size // 2 // 2
+        self.fc_cnn = nn.Sequential(
+            nn.Linear(cnn_output_size*conv2_out_channels, conv2_out_channels),
+            nn.ReLU(),
+        )
+
+        self.lstm = nn.LSTM(input_size=1, hidden_size=hidden_size,
+                            num_layers=num_layers, batch_first=True)
+        self.fc_lstm = nn.Linear(hidden_size, conv2_out_channels)
+        self.fc = nn.Linear(conv2_out_channels*2, num_classes)
+
+    def forward(self, x):
+        # import pdb; pdb.set_trace()
+        x_cnn = x.unsqueeze(1)
+        #cnn takes input of shape (batch_size, channels, seq_len)
+        # x_cnn = x_cnn.permute(0, 2, 1)
+        out_cnn = self.cnn(x_cnn)
+        out_cnn = self.fc_cnn(out_cnn)
+        # lstm takes input of shape (batch_size, seq_len, input_size)
+        x_lstm = x.unsqueeze(2)
+        out_lstm, _ = self.lstm(x_lstm)
+        out_lstm = self.fc_lstm(out_lstm[:, -1, :])
+        out = torch.cat([out_cnn, out_lstm], dim=1)
+        out = self.fc(out)
+        return out

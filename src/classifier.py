@@ -44,7 +44,7 @@ from sklearn.preprocessing import LabelEncoder
 
 from imblearn.over_sampling import SMOTE
 
-from models.classifiers import LSTMClassifier, PyTorchClassifierWrapper, PureLSTMClassifier
+from models.classifiers import LSTMClassifier, PyTorchClassifierWrapper
 from config import default_config, merge_config_with_cli_args
 
 from dataset import compute_class_weights
@@ -172,7 +172,7 @@ def train_lstm(classifier, X_train, y_train, X_val, y_val, X_test, y_test, confi
         print("Available GPU devices: ", torch.cuda.device_count())
 
     trainer = pl.Trainer(
-        # accumulate_grad_batches=config['ACCUMULATE_GRAD_BATCHES'],
+        accumulate_grad_batches=config.get('accumulate_grad_batches'),
         log_every_n_steps=4,
         num_sanity_val_steps=0,
         max_epochs=config['max_epochs'],
@@ -258,7 +258,7 @@ def evaluate_lstm(X_train, y_train, X_val, y_val, config, fold):
         accelerator="gpu",
         devices=-1,
         strategy='ddp',
-        logger=config['logger'],
+        logger=config.get('logger'),
         callbacks=callbacks,
         precision="32-true",
         # precision="16-mixed",
@@ -548,9 +548,19 @@ def make_plots(config, target_label, X_train, y_train, X_val, y_val, X_test, y_t
 
 def tune(config, X_train, y_train, X_val, y_val, X_test, y_test, task, target_names):
 
-    # if config.get('logger') is None:
-    #     wandb_logger = WandbLogger(project="usb_side_channel", config=config)
-    #     config['logger'] = logger
+    # add noise to the data
+    std_dev = 0.005  # Standard deviation of the noise
+    noise = np.random.normal(0, std_dev, size=X_train.shape)
+
+    # X_train_noise = X_train + noise
+    # y_train_noise = y_train
+    # X_train = np.vstack((X_train, X_train_noise))
+    # y_train = np.hstack((y_train, y_train_noise))
+    # X_train = X_train + noise
+
+    if config.get('log'):
+        wandb_logger = WandbLogger(project="usb_side_channel", config=config)
+        config['logger'] = wandb_logger
     print(f"Tuning the model {config['model_name']}")
     config['lstm_input_dim'] = X_train.shape[1]
     config['num_classes'] = len(np.unique(y_train))
@@ -559,10 +569,7 @@ def tune(config, X_train, y_train, X_val, y_val, X_test, y_test, task, target_na
     print("num_classes: ", config['num_classes'])
 
     model_name = config.get('model_name')
-    if model_name == 'pure-lstm':
-        model = PureLSTMClassifier(**config)
-    elif model_name == 'lstm-encoder':
-        model = LSTMClassifier(**config)
+    model = LSTMClassifier(**config)
 
     # model = PureLSTMClassifier(**config)
 
@@ -608,24 +615,27 @@ def tune(config, X_train, y_train, X_val, y_val, X_test, y_test, task, target_na
     inference_duration = measure_inference_time(classifier, X_test, model, dataset_name, task, method)
 
     report = classification_report(y_test, y_pred, target_names=target_names, output_dict=True)
-    # log to wandb
-    wandb.log({"f1_score": report['weighted avg']['f1-score']})
-    wandb.log({"precision": report['weighted avg']['precision']})
-    wandb.log({"recall": report['weighted avg']['recall']})
-    wandb.log({"accuracy": accuracy})
-    wandb.log({"training_duration": duration})
-    wandb.log({"inference_duration": inference_duration})
-
     f1_score = report['weighted avg']['f1-score']
+    print(f"F1 score: {f1_score:.4f}")
+    print(f"Precision: {report['weighted avg']['precision']:.4f}")
+    print(f"Recall: {report['weighted avg']['recall']:.4f}")
+    # log to wandb
+    if config.get('log'):
+        wandb.log({"f1_score": report['weighted avg']['f1-score']})
+        wandb.log({"precision": report['weighted avg']['precision']})
+        wandb.log({"recall": report['weighted avg']['recall']})
+        wandb.log({"accuracy": accuracy})
+        wandb.log({"training_duration": duration})
+        wandb.log({"inference_duration": inference_duration})
 
-    if f1_score >= 0.95:
-        print(f"F1 score is greater than 0.95 (value: {f1_score}).")
-        wandb.alert(
-            title="F1 score is greater than 0.95",
-            text=f"F1 score value is {f1_score}. \nModel: {model_name}, Dataset: {config['dataset']}, Method: {config['method']}, Using encoder: {config['use_encoder']}",
-            level=AlertLevel.WARN,
-            wait_duration=300,
-        )
+        if f1_score >= 0.95:
+            print(f"F1 score is greater than 0.95 (value: {f1_score}).")
+            wandb.alert(
+                title="F1 score is greater than 0.95",
+                text=f"F1 score value is {f1_score}. \nModel: {model_name}, Dataset: {config['dataset']}, Method: {config['method']}, Using encoder: {config['use_encoder']}",
+                level=AlertLevel.WARN,
+                wait_duration=300,
+            )
 
 
 def main():
@@ -646,13 +656,10 @@ def main():
 
     logger = None
 
-    # wandb.init(project="usb_side_channel", config=config)
-    # wandb_logger = WandbLogger(project="usb_side_channel", config=config)
-
-    # if log or tuning:
-    #     logger = wandb_logger
-
-    # config['logger'] = logger
+    if log:
+        wandb.init(project="usb_side_channel", config=config)
+        wandb_logger = WandbLogger(project="usb_side_channel", config=config)
+        config['logger'] = wandb_logger
 
     # if config['features'] is None:
     #     raise ValueError("Provide a model path")

@@ -2,32 +2,40 @@
 
 # good A, B, D1, D2
 # bad C1
-classifier="lstm"
+classifier="encoder"
 
-dataset="dataset_d2"
+dataset="dataset_a"
 method="encoder"
-target_label="device"
+target_label="category"
 
-max_epochs=200
+# base_model="cnn_lstm"
+base_model="parallel_cnn_lstm"
+
+max_epochs=50
 min_epochs=20
 
 learning_rate=0.01
 
-batch_size=32
-conv1_out_channels=32
-conv2_out_channels=16
+accumulate_grad_batches=2
+
+batch_size=16
+conv1_out_channels=128
+conv2_out_channels=64
 
 bottleneck_dim=64
-num_lstm_layers=2
-dropout=0.2
+num_lstm_layers=1
+dropout=0.25
 
 # lstm
 model_name='lstm-encoder'
-# lstm_input_dim=195
+
 lstm_hidden_dim=$bottleneck_dim
 lstm_num_layers=$num_lstm_layers
 lstm_dropout=$dropout
 
+
+
+# add --log for logging to wandb
 
 python classifier.py \
     --tuning \
@@ -48,5 +56,6 @@ python classifier.py \
     --lstm_hidden_dim=$lstm_hidden_dim \
     --num_lstm_layers=$num_lstm_layers \
     --lstm_num_layers=$lstm_num_layers \
+    --accumulate_grad_batches=$accumulate_grad_batches \
     --lstm_dropout=$lstm_dropout \
-    --use_encoder
+    --base_model=$base_model

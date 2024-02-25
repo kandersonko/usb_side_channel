@@ -41,6 +41,10 @@ def merge_config_with_cli_args(config):
     parser.add_argument('--num_workers', type=int, default=num_workers)
     parser.add_argument('--conv1_out_channels', type=int, default=64)
     parser.add_argument('--conv2_out_channels', type=int, default=128)
+    # add base_model
+    parser.add_argument('--base_model', type=str, default='simple',
+                        choices=['lstm', 'cnn_lstm', 'lstm_cnn', 'parallel_cnn_lstm',
+                                 'encoder'])
     # add segment overlap
     parser.add_argument('--overlap', type=float, default=0.0)
     # add sequence length
