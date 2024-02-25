@@ -8,10 +8,12 @@ dataset="dataset_a"
 method="encoder"
 target_label="category"
 
+# base_model="lstm"
 # base_model="cnn_lstm"
-base_model="parallel_cnn_lstm"
+base_model="lstm_cnn"
+# base_model="parallel_cnn_lstm"
 
-max_epochs=50
+max_epochs=25
 min_epochs=20
 
 learning_rate=0.01

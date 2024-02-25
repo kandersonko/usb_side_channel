@@ -381,7 +381,7 @@ class LSTM_CNN(nn.Module):
         self.conv2_out_channels = conv2_out_channels
         self.hidden_size = hidden_size
 
-        self.lstm = nn.LSTM(input_size=input_size, hidden_size=hidden_size, num_layers=num_layers, batch_first=True)
+        self.lstm = nn.LSTM(input_size=1, hidden_size=hidden_size, num_layers=num_layers, batch_first=True)
         self.cnn = nn.Sequential(
             nn.Conv1d(in_channels=hidden_size, out_channels=conv1_out_channels,
                       kernel_size=3, stride=1, padding=1),
