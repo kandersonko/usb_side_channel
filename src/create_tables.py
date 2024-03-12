@@ -16,8 +16,8 @@ best_data = []
 measurement_data = []
 table_data = []
 
-def create_classification_table(data_dir, dataset_name):
-    files = list(Path(data_dir).glob(f'*-{dataset_name}-*'))
+def create_classification_table(data_dir, dataset_name, measurement_df):
+    files = list(Path(data_dir).glob(f'*-{dataset_name}-*.txt'))
     files = sorted(files, key=lambda x: x.stem.split('-')[0]+x.stem.split('-')[4]+x.stem.split('-')[5])
     current_model = None
     data = []
@@ -64,14 +64,32 @@ def create_classification_table(data_dir, dataset_name):
     df['Model'] = df['model'].str.replace('_', ' ').str.title()
     df.rename(columns={'num_folds': 'K-fold', 'method': 'Extractor'}, inplace=True)
     # rename 'encoder' to 'autoencoder'
-    df['Extractor'] = df['Extractor'].str.replace('encoder', 'autoencoder')
+    df['Extractor'] = df['Extractor'].str.replace('encoder', 'Encoder')
     df['Extractor'] = df['Extractor'].str.replace('_', ' ').str.title()
+
+    measurement_df = measurement_df[measurement_df['Dataset'] == dataset_name]
+    measurement_df.rename(columns={'Dataset': 'dataset_name'}, inplace=True)
+
+    # merge the table
+    df = pd.merge(df, measurement_df, on=['Model', 'dataset_name'])
+
+
 
     extractors = df['Extractor'].unique()
 
     for extractor in extractors:
         frame = df[df['Extractor'] == extractor]
-        frame = frame.groupby(['Model']).agg({'Precision': 'mean', 'Recall': 'mean', 'F1 Score': 'mean'}).reset_index()[['Model', 'Precision', 'Recall', 'F1 Score']]
+        # find inference column and training column where the name is 'Inference `extractor`' and 'Training `extractor`'`"
+        inference_column = frame.columns[frame.columns.str.contains(f'Inference {extractor}')][0]
+        training_column = frame.columns[frame.columns.str.contains(f'Training {extractor}')][0]
+        frame['Inference Time (s)'] = frame[inference_column]
+        frame['Training Time (s)'] = frame[training_column]
+        # drop the other inference and training columns where the name is not 'Inference `extractor`' and 'Training `extractor`'`"
+        # for col in frame.columns:
+        #     if col not in ['Model', 'Precision', 'Recall', 'F1 Score', 'Inference Time (s)', 'Training Time (s)']:
+        #         frame.drop(col, axis=1, inplace=True)
+        # frame = frame.groupby(['Model']).agg({'Precision': 'mean', 'Recall': 'mean', 'F1 Score': 'mean'}).reset_index()
+        frame  = frame[['Model', 'Precision', 'Recall', 'F1 Score', 'Inference Time (s)', 'Training Time (s)']]
         print(frame.head())
         # save the latex table to a file
         output_dir = args.output
@@ -80,16 +98,17 @@ def create_classification_table(data_dir, dataset_name):
         # remove previous file
         if output_file.exists():
             output_file.unlink()
-        frame.to_latex(output_file, index=False, escape=False, float_format="%.2f", caption=f"Average precision, recall, f1 score for each model on {dataset_name.replace('_', ' ').title()} using {extractor.lower()} features", label=f"tab:{dataset_name}-{extractor.lower()}-classification_report", bold_rows=True, column_format="lccc", position='H')
+        frame.to_latex(output_file, index=False, escape=False, float_format="%.2f", caption=f"Average precision, recall, f1 score for each model on {dataset_name.replace('_', ' ').title()} using {extractor.lower()} features", label=f"tab:{dataset_name}-{extractor.lower()}-classification_report", bold_rows=True, column_format="lccccc", position='H')
 
         frame['Dataset'] = dataset_name
+        frame['Extractor'] = extractor
         table_data.append(frame)
 
-        # find the best model
-        best_model = frame.iloc[frame['F1 Score'].idxmax()]
-        best_model['Extractor'] = extractor
-        best_model['Dataset'] = dataset_name
-        best_data.append(best_model)
+        # # find the best model
+        # best_model = frame.iloc[frame['F1 Score'].idxmax()]
+        # best_model['Extractor'] = extractor
+        # best_model['Dataset'] = dataset_name
+        # best_data.append(best_model)
 
 
     # # get the latex table from the dataframe
@@ -105,7 +124,7 @@ def create_classification_table(data_dir, dataset_name):
     # df[['Model', 'Extractor', 'Precision', 'Recall', 'F1 Score']].to_latex(output_file, index=False, escape=False, float_format="%.2f", caption=f"Average Precision, Recall, F1 Score for each model on {dataset_name.replace('_', ' ').title()}", label=f"tab:{dataset_name}-classification_report", bold_rows=True, column_format="lcccc", position='h')
 
 
-def create_measurement_tables(data_dir, dataset_name):
+def create_measurement_table(data_dir, dataset_name):
     files = list(Path(data_dir).glob(f'*-{dataset_name}-*.csv'))
     dfs = [pd.read_csv(file) for file in files]
     df = pd.concat(dfs)
@@ -120,8 +139,8 @@ def create_measurement_tables(data_dir, dataset_name):
     frame['Task'] = frame['Task'].str.replace('_', ' ').str.title()
     frame['Method'] = frame['Method'].str.replace('_', ' ').str.title()
     frame['Method'] = frame['Method'].str.replace('encoder', 'AE')
-    frame['Task'] = frame['Task'].str.replace('Inference', 'Infer.')
-    frame['Task'] = frame['Task'].str.replace('Training', 'Train')
+    # frame['Task'] = frame['Task'].str.replace('Inference', 'Infer.')
+    # frame['Task'] = frame['Task'].str.replace('Training', 'Train')
 
     tasks = frame['Task'].unique()
 
@@ -144,6 +163,7 @@ def create_measurement_tables(data_dir, dataset_name):
 
     df_pivoted['Dataset'] = dataset_name
     measurement_data.append(df_pivoted)
+    return df_pivoted
 
 
 def create_feature_extraction_table(data_dir):
@@ -183,19 +203,95 @@ def create_feature_extraction_table(data_dir):
     print(df_pivoted.head())
     return df_pivoted
 
+def classification_to_latex(data, header=None):
+    # # Read the CSV file
+    # data = pd.read_csv(file_path)
+
+    # Sort the data by Dataset and then by Model for consistent ordering
+    data.sort_values(by=['Dataset', 'Model'], inplace=True)
+
+    # LaTeX table start
+    latex_table = r"""\begin{table}[!h]
+\small
+\caption{Evaluation results for the shallow and the deep learning models using raw power consumption signals with average precision, recall, and F1 score.}
+\label{tab:experiment_1--results}
+\begin{tabular}{llllll}
+\rowcolor[HTML]{C0C0C0}
+\hline
+\textbf{Model} & \textbf{Precision} & \textbf{Recall} & \textbf{F1-Score} & \textbf{Training Time (s)} & \textbf{Inference Time (s)}\\
+"""
+
+    # Iterate over each dataset group
+    for dataset, group in data.groupby('Dataset'):
+        # Add dataset header
+        latex_table += r"\rowcolor{lightgray}" + "\n"
+        latex_table += r"\hline" + "\n"
+        latex_table += rf"\multicolumn{{6}}{{c}}{{{dataset.capitalize().replace('_', ' ').title()}}} \\" + "\n"
+        latex_table += r"\hline" + "\n"
+
+        # Add rows for each model in the dataset
+        for _, row in group.iterrows():
+            model_name = row['Model']
+            if len(model_name) <= 3:
+                model_name = model_name.upper()
+            else:
+                model_name = model_name.title()
+            # Bold for specific models
+            if row['Precision'] == 1.0 and row['Recall'] == 1.0 and row['F1 Score'] == 1.0:
+                if len(model_name) <= 3:
+                    model_name = r"\textbf{" + model_name + "}"
+                else:
+                    model_name = r"\textbf{" + model_name + "}"
+
+
+            f1_score = float(row['F1 Score'])
+            precision = float(row['Precision'])
+            recall = float(row['Recall'])
+            training_time = float(row['Training Time (s)'])
+            inference_time = float(row['Inference Time (s)'])
+
+            if f1_score == 1.0:
+                f1_score = r"\textbf{1.0}"
+            else:
+                f1_score = f"{f1_score:.2f}"
+            if precision == 1.0:
+                precision = r"\textbf{1.0}"
+            else:
+                precision = f"{precision:.2f}"
+            if recall == 1.0:
+                recall = r"\textbf{1.0}"
+            else:
+                recall = f"{recall:.2f}"
+
+
+            latex_table += rf"{model_name} & {precision} & {recall} & {f1_score} & {training_time:.5f} & {inference_time:.5f} \\" + "\n"
+            # latex_table += rf"{model_name} & {precision:.2f} & {recall:.2f} & {f1_score:.2f} & {training_time:.5f} & {inference_time:.5f} \\" + "\n"
+
+
+            # latex_table += rf"{model_name} & {row['Precision']:.2f} & {row['Recall']:.2f} & {row['F1 Score']:.2f} & {row['Training Time (s)']:.5f} & {row['Inference Time (s)']:.5f} \\" + "\n"
+
+    # LaTeX table end
+    latex_table += r"""\hline
+\end{tabular}
+\end{table}
+"""
+
+    return latex_table
+
 def main():
     data_dir = args.input
     datasets = ['dataset_a', 'dataset_b', 'dataset_c1', 'dataset_c2', 'dataset_d1', 'dataset_d2']
+    # datasets = ['dataset_a']
 
-    # for dataset_name in datasets:
-    #     print(f"Creating table for {dataset_name}")
-    #     create_classification_table(data_dir, dataset_name)
-    #     print()
+    for dataset_name in datasets:
+        print(f"Creating measurement table for {dataset_name}")
+        measurement_df = create_measurement_table(args.measurements, dataset_name)
+        print()
+        print()
+        print(f"Creating table for {dataset_name}")
+        create_classification_table(data_dir, dataset_name, measurement_df)
+        print()
 
-    #     print(f"Creating measurement table for {dataset_name}")
-    #     create_measurement_tables(args.measurements, dataset_name)
-    #     print()
-    #     print()
 
     print(f"Creating feature extraction tables")
     create_feature_extraction_table(args.measurements)
@@ -204,7 +300,20 @@ def main():
 
 
 
-    # table_df = pd.concat(table_data)
+    table_df = pd.concat(table_data)
+    for extractor in table_df['Extractor'].unique():
+        frame = table_df[table_df['Extractor'] == extractor]
+        # drop extractor column
+        frame.drop('Extractor', axis=1, inplace=True)
+        latex_table = classification_to_latex(frame)
+        output_dir = args.output
+        output_dir.mkdir(parents=True, exist_ok=True)
+        output_file = output_dir / f'{extractor.lower()}-classification_report.tex'
+        output_file.write_text(latex_table)
+        print(f"Saved the table to {output_file}")
+        print()
+
+    # import ipdb; ipdb.set_trace()
 
     # measurement_df = pd.concat(measurement_data)
     # print("Measurement data:")

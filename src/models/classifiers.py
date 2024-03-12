@@ -83,6 +83,7 @@ class LSTMClassifier(pl.LightningModule):
             conv2_out_channels,
             lstm_bidirectional,
             use_encoder=False,
+            use_batch_norm=False,
             base_model="simple",
             **kwargs,
     ):
@@ -103,7 +104,7 @@ class LSTMClassifier(pl.LightningModule):
         self.use_encoder = use_encoder
 
         self.model = None
-        if base_model == "encoder" or use_encoder:
+        if base_model == "encoder":
             self.model = nn.Sequential(
                 LSTMEncoder(input_size=input_size, hidden_size=hidden_size, num_layers=num_lstm_layers, dropout=dropout, sequence_length=sequence_length, num_features=1, conv1_out_channels=conv1_out_channels, conv2_out_channels=conv2_out_channels),
                 nn.Linear(hidden_size, num_classes)
@@ -133,13 +134,16 @@ class LSTMClassifier(pl.LightningModule):
 
         elif base_model == "parallel_cnn_lstm":
             self.model = Parallel_CNN_LSTM(
+                use_batch_norm=use_batch_norm,
                 input_size=input_size,
                 hidden_size=hidden_size,
                 num_layers=num_lstm_layers,
                 num_classes=num_classes,
                 conv1_out_channels=conv1_out_channels,
                 conv2_out_channels=conv2_out_channels,
-                dropout=dropout)
+                dropout=dropout,
+                activation_fn=nn.LeakyReLU()
+            )
         else:
             raise ValueError("Invalid base model. Choose from 'encoder', 'lstm', 'cnn_lstm', 'lstm_cnn', 'parallel_cnn_lstm'")
 
@@ -243,6 +247,7 @@ class LSTMEncoder(nn.Module):
                  num_layers,
                  conv2_out_channels,
                  dropout,
+                 activation_fn=nn.ReLU(),
                  **kwargs,
                  ):
         super().__init__()
@@ -251,6 +256,7 @@ class LSTMEncoder(nn.Module):
         self.hidden_size = hidden_size
         self.num_layers = num_layers
         self.dropout = dropout
+        self.activation_fn = activation_fn
 
         # Define CNN layers
         self.conv1 = nn.Conv1d(in_channels=num_features, out_channels=conv1_out_channels, kernel_size=3, stride=1, padding=1)
@@ -288,14 +294,16 @@ class LSTMEncoder(nn.Module):
 
         x = self.conv1(x)
         # x = self.bn1(x)
-        x = torch.relu(x)
+        # x = torch.relu(x)
+        x = self.activation_fn(x)
         x = self.pool(x)
 
         # x = self.dropout(x)
 
         x = self.conv2(x)
         # x = self.bn2(x)
-        x = torch.relu(x)
+        # x = torch.relu(x)
+        x = self.activation_fn(x)
 
         x = self.pool(x)
 
@@ -318,9 +326,15 @@ class LSTMEncoder(nn.Module):
 
 
 class SimpleLSTM(nn.Module):
-    def __init__(self, input_size, hidden_size, num_layers, num_classes, dropout, bidirectional=True):
+    def __init__(self, input_size, hidden_size, num_layers,
+                 num_classes, dropout, bidirectional=True, activation_fn=nn.ReLU()):
         super(SimpleLSTM, self).__init__()
-        self.lstm = nn.LSTM(input_size=input_size, hidden_size=hidden_size, num_layers=num_layers, batch_first=True, bidirectional=bidirectional)
+        self.lstm = nn.LSTM(input_size=input_size,
+                            hidden_size=hidden_size,
+                            num_layers=num_layers,
+                            batch_first=True,
+                            bidirectional=bidirectional,
+                            dropout=(0 if num_layers == 1 else dropout))
         self.fc = None
         if bidirectional:
             self.fc = nn.Linear(hidden_size*2, num_classes)
@@ -337,22 +351,27 @@ class SimpleLSTM(nn.Module):
 class CNN_LSTM(nn.Module):
     def __init__(self, input_size, hidden_size, num_layers, num_classes,
                  conv1_out_channels,
-                 conv2_out_channels, dropout):
+                 conv2_out_channels, dropout, activation_fn=nn.ReLU()):
         super(CNN_LSTM, self).__init__()
         self.cnn = nn.Sequential(
             nn.Conv1d(in_channels=input_size,
                       out_channels=conv1_out_channels,
                       kernel_size=3, stride=1, padding=1),
-            nn.ReLU(),
+            # nn.ReLU(),
+            activation_fn,
+            nn.Dropout(dropout),
             nn.MaxPool1d(kernel_size=2, stride=2),
             nn.Conv1d(in_channels=conv1_out_channels, out_channels=conv2_out_channels,
                       kernel_size=3, stride=1, padding=1),
-            nn.ReLU(),
+            # nn.ReLU(),
+            activation_fn,
+            nn.Dropout(dropout),
             nn.MaxPool1d(kernel_size=2, stride=2)
         )
         self.lstm = nn.LSTM(input_size=conv2_out_channels,
                             hidden_size=hidden_size,
-                            num_layers=num_layers, batch_first=True)
+                            num_layers=num_layers, batch_first=True,
+                            dropout=(0 if num_layers == 1 else dropout))
         self.fc = nn.Linear(hidden_size, num_classes)
 
     def forward(self, x):
@@ -374,22 +393,27 @@ class CNN_LSTM(nn.Module):
 
 class LSTM_CNN(nn.Module):
     def __init__(self, input_size, hidden_size, num_layers, num_classes,
-                 conv1_out_channels, conv2_out_channels, dropout):
+                 conv1_out_channels, conv2_out_channels, dropout, activation_fn=nn.ReLU()):
         super().__init__()
         self.num_classes = num_classes
         self.conv1_out_channels = conv1_out_channels
         self.conv2_out_channels = conv2_out_channels
         self.hidden_size = hidden_size
+        self.activation_fn = activation_fn
 
-        self.lstm = nn.LSTM(input_size=1, hidden_size=hidden_size, num_layers=num_layers, batch_first=True)
+        self.lstm = nn.LSTM(input_size=1, hidden_size=hidden_size, num_layers=num_layers, batch_first=True,
+                            dropout=(0 if num_layers == 1 else dropout))
         self.cnn = nn.Sequential(
             nn.Conv1d(in_channels=hidden_size, out_channels=conv1_out_channels,
                       kernel_size=3, stride=1, padding=1),
-            nn.ReLU(),
+            # nn.ReLU(),
+            activation_fn,
             nn.MaxPool1d(kernel_size=2, stride=2),
             nn.Conv1d(in_channels=conv1_out_channels, out_channels=conv2_out_channels,
                       kernel_size=3, stride=1, padding=1),
-            nn.ReLU(),
+            # nn.ReLU(),
+            activation_fn,
+            nn.Dropout(dropout),
             nn.MaxPool1d(kernel_size=2, stride=2),
             nn.Flatten(),
             # nn.LazyLinear(out_features=2*conv2_out_channels),
@@ -399,7 +423,9 @@ class LSTM_CNN(nn.Module):
         self.cnn_output_size = input_size // 2 // 2
         self.fc = nn.Sequential(
             nn.Linear(self.cnn_output_size*self.conv2_out_channels, self.hidden_size),
-            nn.ReLU(),
+            # nn.ReLU(),
+            activation_fn,
+            nn.Dropout(dropout),
             nn.Linear(in_features=self.hidden_size, out_features=self.num_classes)
         )
 
@@ -417,32 +443,42 @@ class LSTM_CNN(nn.Module):
 
 class Parallel_CNN_LSTM(nn.Module):
     def __init__(self, input_size, hidden_size, num_layers, num_classes,
-                 conv1_out_channels, conv2_out_channels, dropout):
+                 conv1_out_channels, conv2_out_channels, dropout, activation_fn=nn.ReLU(), use_batch_norm=False):
         super().__init__()
+        # Conv - BatchNorm - Activation - DropOut - Pool
         self.cnn = nn.Sequential(
             nn.Conv1d(in_channels=1, out_channels=conv1_out_channels,
                       kernel_size=3, stride=1, padding=1),
-            nn.ReLU(),
+            nn.BatchNorm1d(conv1_out_channels) if use_batch_norm else nn.Identity(),
+            # nn.ReLU(),
+            activation_fn,
+            nn.Dropout(dropout),
             nn.MaxPool1d(kernel_size=2, stride=2),
             nn.Conv1d(in_channels=conv1_out_channels, out_channels=conv2_out_channels,
                       kernel_size=3, stride=1, padding=1),
-            nn.ReLU(),
+            nn.BatchNorm1d(conv2_out_channels) if use_batch_norm else nn.Identity(),
+            # nn.ReLU(),
+            activation_fn,
+            nn.Dropout(dropout),
             nn.MaxPool1d(kernel_size=2, stride=2),
             nn.Flatten(),
-            # nn.LazyLinear(out_features=conv2_out_channels),
-            # nn.ReLU()
         )
 
         cnn_output_size = input_size // 2 // 2
         self.fc_cnn = nn.Sequential(
             nn.Linear(cnn_output_size*conv2_out_channels, conv2_out_channels),
-            nn.ReLU(),
+            # nn.ReLU(),
+            activation_fn,
+            nn.Dropout(dropout),
         )
 
         self.lstm = nn.LSTM(input_size=1, hidden_size=hidden_size,
-                            num_layers=num_layers, batch_first=True)
+                            num_layers=num_layers, batch_first=True,
+                            dropout=(0 if num_layers == 1 else dropout))
         self.fc_lstm = nn.Linear(hidden_size, conv2_out_channels)
         self.fc = nn.Linear(conv2_out_channels*2, num_classes)
+
+        self.attention = Attention(hidden_size)
 
     def forward(self, x):
         # import pdb; pdb.set_trace()
@@ -454,7 +490,13 @@ class Parallel_CNN_LSTM(nn.Module):
         # lstm takes input of shape (batch_size, seq_len, input_size)
         x_lstm = x.unsqueeze(2)
         out_lstm, _ = self.lstm(x_lstm)
-        out_lstm = self.fc_lstm(out_lstm[:, -1, :])
+        # out_lstm = self.fc_lstm(out_lstm[:, -1, :])
+
+        # Apply attention
+        out_lstm, _ = self.attention(out_lstm)  # Apply attention
+        out_lstm = self.fc_lstm(out_lstm)
+
+
         out = torch.cat([out_cnn, out_lstm], dim=1)
         out = self.fc(out)
         return out

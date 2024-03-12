@@ -103,6 +103,34 @@ def segment_dataset(features, labels, window_size, overlap):
 
     return windows, window_labels
 
+
+def segment_dataset_v2(features, labels, window_size, overlap):
+    """
+    Segments a dataset into windows of size window_size with overlap overlap
+    :param features: The features to segment, expected shape (n_samples, n_features)
+    :param labels: The labels to segment, expected shape (n_samples, n_labels)
+    :param window_size: The size of the window to apply to each signal
+    :param overlap: The percentage of overlap between windows within the same signal
+    :return: A tuple containing the segmented features and labels
+    """
+    assert 0 <= overlap < 1, "Overlap percent must be between 0 and 1"
+
+    step_size = window_size - int(window_size * overlap)
+    segmented_features = []
+    segmented_labels = []
+
+    for i in range(features.shape[0]):  # Iterate over each sequence
+        for start in range(0, features.shape[1] - window_size + 1, step_size):
+            end = start + window_size
+            segmented_features.append(features[i, start:end])
+            segmented_labels.append(labels[i])
+
+    # Convert to numpy arrays for consistency and to support further processing
+    segmented_features = np.array(segmented_features)
+    segmented_labels = np.array(segmented_labels)
+
+    return segmented_features, segmented_labels
+
 def setup_dataset(dataset_path, sequence_length, val_split, dataset_subset, target_label, overlap, **kwargs):
     data = load_data(dataset_path)
 
@@ -196,8 +224,8 @@ def extract_features(model, data_module=None, train_dataloader=None, val_dataloa
         assert train_dataloader is not None and val_dataloader is not None and train_dataloader is not None, "Provide either a data module or the train, validation, and test dataloaders"
 
 
-    if torch.cuda.is_available():
-        model = DataParallel(model).cuda()
+    # if torch.cuda.is_available():
+    #     model = DataParallel(model).cuda()
 
     model.eval()
 
@@ -209,7 +237,7 @@ def extract_features(model, data_module=None, train_dataloader=None, val_dataloa
         encoder = model.encoder
 
     with torch.no_grad():
-        for batch in tqdm(iter(train_dataloader)):
+        for batch in tqdm(train_dataloader):
             segments, batch_labels = batch
             if torch.cuda.is_available():
                 segments = segments.cuda(non_blocking=True)
@@ -218,7 +246,7 @@ def extract_features(model, data_module=None, train_dataloader=None, val_dataloa
             train_segments.append(segments_encoded)
             train_labels.append(batch_labels)
 
-        for batch in tqdm(iter(val_dataloader)):
+        for batch in tqdm(val_dataloader):
             segments, batch_labels = batch
             if torch.cuda.is_available():
                 segments = segments.cuda(non_blocking=True)
@@ -227,7 +255,7 @@ def extract_features(model, data_module=None, train_dataloader=None, val_dataloa
             val_segments.append(segments_encoded)
             val_labels.append(batch_labels)
 
-        for batch in tqdm(iter(test_dataloader)):
+        for batch in tqdm(test_dataloader):
             segments, batch_labels = batch
             if torch.cuda.is_available():
                 segments = segments.cuda(non_blocking=True)

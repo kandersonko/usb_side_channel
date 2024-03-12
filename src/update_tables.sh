@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Loop through all .tex files in the current directory that contain 'measurement' in their names
-for latex_file in *measurement*.tex; do
+for latex_file in tables/*measurement*.tex; do
     # Check if the file exists (in case the globbing found no matches)
     if [ ! -f "$latex_file" ]; then
         echo "No LaTeX files with 'measurement' in their names found in the current directory."

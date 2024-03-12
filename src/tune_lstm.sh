@@ -1,32 +1,37 @@
 #!/usr/bin/env sh
 
-# good A, B, D1, D2
-# bad C1
+# bad C1,D1
 classifier="encoder"
 
-dataset="dataset_a"
+dataset="dataset_d1"
 method="encoder"
-target_label="category"
 
+if [[ $dataset == "dataset_a" ]]; then
+    target_label="category"
+else
+    target_label="device"
+fi
+
+# base_model="encoder"
 # base_model="lstm"
 # base_model="cnn_lstm"
-base_model="lstm_cnn"
-# base_model="parallel_cnn_lstm"
+# base_model="lstm_cnn"
+base_model="parallel_cnn_lstm"
 
-max_epochs=25
-min_epochs=20
+max_epochs=20
+min_epochs=5
 
-learning_rate=0.01
+learning_rate=0.001
 
 accumulate_grad_batches=2
 
 batch_size=16
 conv1_out_channels=128
-conv2_out_channels=64
+conv2_out_channels=256
+bottleneck_dim=128
 
-bottleneck_dim=64
 num_lstm_layers=1
-dropout=0.25
+dropout=0.05
 
 # lstm
 model_name='lstm-encoder'

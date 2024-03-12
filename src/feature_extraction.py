@@ -53,7 +53,8 @@ def main():
 
     model = None
     if config['model_path'] is not None and config['model_path'] != '':
-        model = PureAutoencoder.load_from_checkpoint(best_model_path)
+        # model = PureAutoencoder.load_from_checkpoint(best_model_path)
+        model = Autoencoder.load_from_checkpoint(best_model_path)
     else:
         raise ValueError("Provide a model path")
 
@@ -86,7 +87,7 @@ def main():
 
 
     train_loader = to_dataloader(X_train, y_train, batch_size=config['batch_size'],
-                                    num_workers=config['num_workers'], shuffle=True)
+                                    num_workers=config['num_workers'], shuffle=False)
     val_loader = to_dataloader(X_val, y_val, batch_size=config['batch_size'],
                                     num_workers=config['num_workers'], shuffle=False)
     test_loader = to_dataloader(X_test, y_test, batch_size=config['batch_size'],
@@ -95,13 +96,18 @@ def main():
     print("Extracting features")
     start_time = time.time()
 
-    X_train_encoded, y_train, X_val_encoded, y_val, X_test_encoded, y_test = extract_features(
+    X_train_encoded, y_train_encoded, X_val_encoded, y_val_encoded, X_test_encoded, y_test_encoded = extract_features(
         model,
         train_dataloader=train_loader,
         val_dataloader=val_loader,
         test_dataloader=test_loader,
-        has_modules=True,
+        has_modules=False,
     )
+
+    # check if the features are extracted correctly
+    assert(np.all(y_train == y_train_encoded))
+    assert(np.all(y_val == y_val_encoded))
+    assert(np.all(y_test == y_test_encoded))
 
     end_time = time.time()
     duration = end_time - start_time

@@ -42,9 +42,11 @@ def merge_config_with_cli_args(config):
     parser.add_argument('--conv1_out_channels', type=int, default=64)
     parser.add_argument('--conv2_out_channels', type=int, default=128)
     # add base_model
-    parser.add_argument('--base_model', type=str, default='simple',
+    parser.add_argument('--base_model', type=str, default='parallel_cnn_lstm',
                         choices=['lstm', 'cnn_lstm', 'lstm_cnn', 'parallel_cnn_lstm',
                                  'encoder'])
+    # add use_batch_norm
+    parser.add_argument('--use_batch_norm', action='store_true', default=False)
     # add segment overlap
     parser.add_argument('--overlap', type=float, default=0.0)
     # add sequence length
@@ -64,18 +66,20 @@ def merge_config_with_cli_args(config):
     parser.add_argument('--lstm_dropout', type=float, default=0.2)
     parser.add_argument('--lstm_bidirectional', action='store_true', default=False)
 
-
     # add learning rate
     parser.add_argument('--learning_rate', type=float, default=1e-3)
     # # add reconstruction loss weight
-    # parser.add_argument('--reconstruction_loss_weight',
-    #                     type=float, default=1.0)
+    parser.add_argument('--reconstruction_loss_weight',
+                        type=float, default=1.0)
     # # add class loss weight
-    # parser.add_argument('--classification_loss_weight',
-    #                     type=float, default=1.0)
+    parser.add_argument('--classification_loss_weight',
+                        type=float, default=1.0)
 
     # # add no_class_weights boolean flag with default False
     # parser.add_argument('--use_class_weights', action='store_true', default=False)
+
+    # add train argument
+    parser.add_argument('--train', action='store_true', default=False)
 
     # add log bool argument
     parser.add_argument('--log', action='store_true', default=False)

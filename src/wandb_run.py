@@ -10,6 +10,8 @@ import lightning.pytorch as pl
 from lightning.pytorch.loggers import WandbLogger
 
 from classifier import tune
+from train import train
+from config import default_config, merge_config_with_cli_args
 
 
 parser = argparse.ArgumentParser()
@@ -85,32 +87,36 @@ def main():
 
     # load config from wandb api
     print("Loading config from wandb")
-    config = best_run.config
+    cli_config = merge_config_with_cli_args(default_config)
+    # merge the best run config with the cli config with the best run config taking precedence
+    config = {**cli_config, **best_run.config}
+    # config = best_run.config
     print(config)
 
     pl.seed_everything(config['seed'])
 
 
     # load dataset
-    print(f"Loading dataset: {config['dataset']}")
-    X_train, y_train, X_val, y_val, X_test, y_test, target_names = load_dataset(config['data_dir'], config['dataset'], config['target_label'], config['method'])
-    print("X_train shape: ", X_train.shape)
-    print("y_train shape: ", y_train.shape)
-    print("X_val shape: ", X_val.shape)
-    print("y_val shape: ", y_val.shape)
-    print("X_test shape: ", X_test.shape)
-    print("y_test shape: ", y_test.shape)
+    # print(f"Loading dataset: {config['dataset']}")
+    # X_train, y_train, X_val, y_val, X_test, y_test, target_names = load_dataset(config['data_dir'], config['dataset'], config['target_label'], config['method'])
+    # print("X_train shape: ", X_train.shape)
+    # print("y_train shape: ", y_train.shape)
+    # print("X_val shape: ", X_val.shape)
+    # print("y_val shape: ", y_val.shape)
+    # print("X_test shape: ", X_test.shape)
+    # print("y_test shape: ", y_test.shape)
 
     wandb_id = wandb_path.split('/')[-1]
     print("wandb_id: ", wandb_id)
 
-    if config.get('tuning', False):
+    train(config)
+
+    if cli_config.get('tuning', False):
         print("Tuning the model")
         if args.resume:
             print("Resuming the tuning")
             wandb.init(project="usb_side_channel", config=config, resume=wandb_id)
-
-        else:
+        # else:
             # wandb.init(project="usb_side_channel", config=config)
 
         # wandb_logger = WandbLogger(project="usb_side_channel", config=config)
@@ -120,6 +126,12 @@ def main():
         task = config['task']
         tune(config, X_train, y_train, X_val, y_val, X_test, y_test, task, target_names)
 
+    # elif cli_config('train'):
+    #     train(config)
+    #     print("Training the model")
+        # wandb.init(project="usb_side_channel", config=config)
+        # wandb_logger = WandbLogger(project="usb_side_channel", config=config)
+        # logger = wandb_logger
 
 
 

@@ -13,7 +13,7 @@ import lightning.pytorch as pl
 from lightning.pytorch.tuner import Tuner
 # from lightning.pytorch.loggers import TensorBoardLogger
 from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint, LearningRateMonitor
-from lightning.pytorch.callbacks import LearningRateFinder
+from lightning.pytorch.callbacks import LearningRateFinder, Timer
 from lightning.pytorch.utilities.model_summary import ModelSummary
 from lightning.pytorch.cli import LightningCLI
 from lightning.pytorch.loggers import WandbLogger
@@ -34,7 +34,7 @@ torch.multiprocessing.set_sharing_strategy('file_system')
 # torch.multiprocessing.set_start_method('spawn')
 
 
-def main():
+def train(config):
 
     # initialize wandb only on the main process
 
@@ -43,7 +43,6 @@ def main():
     # config = {**default_config, **vars(args)} if vars(args) else default_config
 
 
-    config = merge_config_with_cli_args(default_config)
 
     log = config.get('log', None)
 
@@ -68,15 +67,22 @@ def main():
     train_dataset_path = f"{config['data_dir']}/common_dataset.npz"
     training_dataset = np.load(train_dataset_path, allow_pickle=True)
     X_train = training_dataset['X_train']
+    y_train = training_dataset['y_train']
     X_val = training_dataset['X_val']
+    y_val = training_dataset['y_val']
+    target_names = training_dataset['target_names']
+    num_classes = len(target_names)
+
     # get the data loaders
-    train_loader = to_dataloader(X_train, X_train, batch_size=config['batch_size'],
-                                 num_workers=config['num_workers'], shuffle=True)
-    val_loader = to_dataloader(X_val, X_val, batch_size=config['batch_size'],
+    train_loader = to_dataloader(X_train, y_train, batch_size=config['batch_size'],
+                                 num_workers=config['num_workers'], shuffle=False)
+    val_loader = to_dataloader(X_val, y_val, batch_size=config['batch_size'],
                                  num_workers=config['num_workers'], shuffle=False)
 
-    # model = Autoencoder(**config)
-    model = PureAutoencoder(**config)
+    config['num_classes'] = num_classes
+
+    model = Autoencoder(**config)
+    # model = PureAutoencoder(**config)
 
     summary = ModelSummary(model, max_depth=-1)
 
@@ -99,11 +105,15 @@ def main():
 
     learning_rate_finder = LearningRateFinder()
 
+    # stop training after 12 hours
+    timer = Timer(duration="00:12:00:00")
+
     callbacks = [
         early_stopping,
         learning_rate_monitor,
         checkpoint_callback,
         learning_rate_finder,
+        timer,
     ]
 
     # data_module = USBDataModule(batch_size=config['BATCH_SIZE'], val_split=config['VAL_SPLIT'])
@@ -112,6 +122,7 @@ def main():
 
 
     trainer = pl.Trainer(
+        deterministic=True, # makes training reproducible
         accumulate_grad_batches=config.get('accumulate_grad_batches'),
         num_sanity_val_steps=0,
         max_epochs=config['max_epochs'],
@@ -144,6 +155,13 @@ def main():
 
     trainer.fit(model, train_loader, val_loader)
 
+    duration = timer.time_elapsed("train")
+    print(f"Training duration: {duration}")
+    # save the training duration
+    plot_data = []
+    plot_data.append({"name": "autoencoder", "task": "training", "dataset": "all_training_data", "method": "autoencoder", "duration": duration})
+
+
     # feature extraction
 
     # Load the best model
@@ -151,9 +169,11 @@ def main():
 
     # Load the best model
     best_model_path = checkpoint_callback.best_model_path
-    model = PureAutoencoder.load_from_checkpoint(best_model_path)
+    # model = PureAutoencoder.load_from_checkpoint(best_model_path)
+    model = Autoencoder.load_from_checkpoint(best_model_path)
     # model.load_state_dict(torch.load(best_model_path)['state_dict'])
 
+    plot_data.to_csv(f"measurements/{best_model_path}-training-duration.csv")
 
     if trainer.is_global_zero:
         print("\nFinished training\n\n")
@@ -211,7 +231,7 @@ def main():
             train_dataloader=train_loader,
             val_dataloader=val_loader,
             test_dataloader=test_loader,
-            has_modules=True
+            has_modules=False
         )
 
     if trainer.is_global_zero:
@@ -234,10 +254,13 @@ def main():
         print(f"Accuracy: {accuracy*100.0:.4f}")
         print(report)
 
+        print("Best model path: ", best_model_path)
+
     # Close wandb run
     if log:
         wandb.finish()
 
 
 if __name__ == '__main__':
-    main()
+    config = merge_config_with_cli_args(default_config)
+    train(config)
