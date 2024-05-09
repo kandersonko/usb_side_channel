@@ -3,7 +3,7 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH -p gpu-volatile
-#SBATCH --gres=gpu:a100:2
+#SBATCH --gres=gpu:a6000:2
 #SBATCH --time=08:00:00
 #SBATCH --output=jobs/sweep_%A_%a.stdout
 #SBATCH --error=jobs/sweep_%A_%a.stderr
@@ -34,6 +34,24 @@ which python
 # Assign each task to a specific GPU
 # export CUDA_VISIBLE_DEVICES=$SLURM_ARRAY_TASK_ID
 
-sweep_id=sky6l10o
+# dataset_a
+sweep_id=kxh8r98c
 
-srun --exclusive --gres=gpu:a100:2 -l wandb agent koffi-anderson/usb_side_channel/${sweep_id}
+# # dataset_b
+# sweep_id=etmmz8md
+
+# # dataset_c1
+# sweep_id=9x6kjm8p
+
+# # dataset_c2
+# sweep_id=z6bmeqd3
+
+# # dataset_d1
+# sweep_id=86di6s6s
+
+# # dataset_d2
+# sweep_id=ujblllhg
+
+# srun --exclusive --gres=gpu:a100:2 -l wandb agent koffi-anderson/usb_side_channel/${sweep_id}
+# srun --exclusive --gres=gpu:2 -l wandb agent koffi-anderson/usb_experiments/${sweep_id}
+srun --exclusive --gres=gpu:2 -l wandb agent koffi-anderson/usb_experiments/${sweep_id}

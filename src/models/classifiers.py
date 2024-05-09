@@ -82,14 +82,12 @@ class LSTMClassifier(pl.LightningModule):
             conv1_out_channels,
             conv2_out_channels,
             lstm_bidirectional,
-            use_encoder=False,
             use_batch_norm=False,
-            base_model="simple",
+            base_model="parallel_cnn_lstm",
             **kwargs,
     ):
         super().__init__()
         self.save_hyperparameters()
-
 
         self.monitor = monitor_metric
         self.learning_rate_patience = learning_rate_patience
@@ -101,7 +99,6 @@ class LSTMClassifier(pl.LightningModule):
         self.num_layers = num_lstm_layers
         self.batch_size = batch_size
 
-        self.use_encoder = use_encoder
 
         self.model = None
         if base_model == "encoder":

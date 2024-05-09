@@ -12,7 +12,6 @@ import lightning.pytorch as pl
 
 # from einops.layers.torch import Rearrange
 
-from config import default_config as config
 
 class PureAutoencoder(pl.LightningModule):
     def __init__(
@@ -289,13 +288,13 @@ class LinearDecoder(nn.Module):
 
 
 class ConvEncoder(nn.Module):
-    def __init__(self, channels, bottleneck_dim, activation_fn=nn.ReLU(True)):
+    def __init__(self, channels, bottleneck_dim, dropout, batch_size, activation_fn=nn.ReLU(True)):
         super().__init__()
         self.channels = channels
         self.bottleneck_dim = bottleneck_dim
-        self.dropout = config['DROPOUT']
+        self.dropout = dropout
 
-        self.batch_size = config['BATCH_SIZE']
+        self.batch_size = batch_size
 
         # Convolutional layers
         conv_layers = []
@@ -333,13 +332,13 @@ class ConvEncoder(nn.Module):
 
 
 class ConvDecoder(nn.Module):
-    def __init__(self, channels, bottleneck_dim, activation_fn=nn.ReLU(True)):
+    def __init__(self, channels, bottleneck_dim, dropout, batch_size, activation_fn=nn.ReLU(True)):
         super().__init__()
         self.channels = channels
         self.bottleneck_dim = bottleneck_dim
 
-        self.batch_size = config['BATCH_SIZE']
-        self.dropout = config['DROPOUT']
+        self.batch_size = batch_size
+        self.dropout = dropout
 
         # Convolutional layers
         conv_layers = []
@@ -383,7 +382,7 @@ class ConvDecoder(nn.Module):
 
 
 class LSTMEncoder(nn.Module):
-    def __init__(self, input_size=1, sequence_length=config['sequence_length'], hidden_size=config['bottleneck_dim'], num_layers=1):
+    def __init__(self, sequence_length, hidden_size, input_size=1, num_layers=1):
         super().__init__()
         self.sequence_length = sequence_length
         self.hidden_size = hidden_size
@@ -397,8 +396,8 @@ class LSTMEncoder(nn.Module):
 
 
 class LSTMDecoder(nn.Module):
-    def __init__(self, input_size=1, hidden_size=config['bottleneck_dim'],
-                 num_layers=1, sequence_length=config['sequence_length']):
+    def __init__(self, sequence_length, hidden_size, input_size=1,
+                 num_layers=1):
         super().__init__()
         self.sequence_length = sequence_length
         self.hidden_size = hidden_size

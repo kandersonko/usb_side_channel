@@ -5,16 +5,16 @@
 # list of classifiers
 # classifiers=("random_forest" "SVC" "KNN" "gradient_boosting" "decision_tree" "lstm")
 # classifiers=("random_forest" "SVC" "KNN" "gradient_boosting" "decision_tree")
-classifiers=("random_forest")
-# classifiers=("lstm")
+# classifiers=("random_forest")
+classifiers=("lstm")
 
 # list of datasets
-datasets=("dataset_a" "dataset_b" "dataset_c1" "dataset_c2" "dataset_d1" "dataset_d2")
+# datasets=("dataset_a" "dataset_b" "dataset_c1" "dataset_c2" "dataset_d1" "dataset_d2")
 # datasets=("dataset_d1" "dataset_d2")
-# datasets=("dataset_c2" "dataset_d1")
+datasets=("dataset_a")
 
-methods=("raw" "encoder" "tsfresh")
-# methods=("tsfresh")
+# methods=("raw" "encoder" "tsfresh")
+methods=("encoder")
 
 folds=10
 
@@ -64,30 +64,39 @@ for method in "${methods[@]}"; do
                 # --tuning \
                 # --log \
             python classifier.py \
-                --model_name=$model_name \
-                --task=identification \
-                --method=$method \
-                --dataset=$dataset \
-                --target_label=$target_label \
-                --classifier=$classifier \
-                --batch_size=$batch_size \
-                --kfold=$folds \
-                --max_epochs=$max_epochs \
-                --min_epochs=$min_epochs \
-                --learning_rate=$learning_rate \
-                --bottleneck_dim=$bottleneck_dim \
-                --conv1_out_channels=$conv1_out_channels \
-                --conv2_out_channels=$conv2_out_channels \
-                --dropout=$dropout \
-                --lstm_hidden_dim=$lstm_hidden_dim \
-                --num_lstm_layers=$num_lstm_layers \
-                --lstm_num_layers=$lstm_num_layers \
-                --accumulate_grad_batches=$accumulate_grad_batches \
-                --lstm_dropout=$lstm_dropout \
-                --early_stopping_patience=$early_stopping_patience \
-                --learning_rate_patience=$learning_rate_patience \
-                --base_model=$base_model \
-                --use_batch_norm
+                experiment=classifier \
+                model_name=$model_name \
+                task=identification \
+                method=$method \
+                datasets.dataset=$dataset \
+
+
+            
+            # python classifier.py \
+            #     --model_name=$model_name \
+            #     --task=identification \
+            #     --method=$method \
+            #     --dataset=$dataset \
+            #     --target_label=$target_label \
+            #     --classifier=$classifier \
+            #     --batch_size=$batch_size \
+            #     --kfold=$folds \
+            #     --max_epochs=$max_epochs \
+            #     --min_epochs=$min_epochs \
+            #     --learning_rate=$learning_rate \
+            #     --bottleneck_dim=$bottleneck_dim \
+            #     --conv1_out_channels=$conv1_out_channels \
+            #     --conv2_out_channels=$conv2_out_channels \
+            #     --dropout=$dropout \
+            #     --lstm_hidden_dim=$lstm_hidden_dim \
+            #     --num_lstm_layers=$num_lstm_layers \
+            #     --lstm_num_layers=$lstm_num_layers \
+            #     --accumulate_grad_batches=$accumulate_grad_batches \
+            #     --lstm_dropout=$lstm_dropout \
+            #     --early_stopping_patience=$early_stopping_patience \
+            #     --learning_rate_patience=$learning_rate_patience \
+            #     --base_model=$base_model \
+            #     --use_batch_norm
 
 
 

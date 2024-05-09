@@ -46,8 +46,15 @@ def create_classification_table(data_dir, dataset_name, measurement_df):
             classification_report = file.read_text()
             # get number of folds using regex from the classification report content
             # on the line `Number of folds: 10`
+            print(f"Processing {file}")
+            print(classification_report)
             num_folds = re.findall(r'Number of folds: (\d+)', classification_report)[0]
+            accuracy = re.findall(r'Accuracy: (\d+\.\d+)', classification_report)[0]
+            roc_auc = re.findall(r'ROC AUC: (\d+\.\d+)', classification_report)[0]
             data_row['num_folds'] = int(num_folds)
+            data_row['Accuracy'] = float(accuracy)
+            data_row['ROC AUC'] = float(roc_auc)
+
             scores = list(filter(lambda x: len(x.strip()), classification_report.split('\n')))[-1]
             score_values = re.split(r'\s+', scores)
             precision = float(score_values[2])
@@ -82,14 +89,19 @@ def create_classification_table(data_dir, dataset_name, measurement_df):
         # find inference column and training column where the name is 'Inference `extractor`' and 'Training `extractor`'`"
         inference_column = frame.columns[frame.columns.str.contains(f'Inference {extractor}')][0]
         training_column = frame.columns[frame.columns.str.contains(f'Training {extractor}')][0]
-        frame['Inference Time (s)'] = frame[inference_column]
-        frame['Training Time (s)'] = frame[training_column]
+        frame['Inference Time (ms)'] = frame[inference_column].apply(lambda x: float(x))
+        frame['Training Time (s)'] = frame[training_column].apply(lambda x: float(x))
+        # conver the inference time to milliseconds and round to 2 decimal places
+        frame['Inference Time (ms)'] = frame['Inference Time (ms)'] * 1000
+        frame['Inference Time (ms)'] = frame['Inference Time (ms)'].apply(lambda x: f"{x:.2f}")
+        # round the training time to 3 decimal places
+        frame['Training Time (s)'] = frame['Training Time (s)'].apply(lambda x: f"{x:.3f}")
         # drop the other inference and training columns where the name is not 'Inference `extractor`' and 'Training `extractor`'`"
         # for col in frame.columns:
         #     if col not in ['Model', 'Precision', 'Recall', 'F1 Score', 'Inference Time (s)', 'Training Time (s)']:
         #         frame.drop(col, axis=1, inplace=True)
         # frame = frame.groupby(['Model']).agg({'Precision': 'mean', 'Recall': 'mean', 'F1 Score': 'mean'}).reset_index()
-        frame  = frame[['Model', 'Precision', 'Recall', 'F1 Score', 'Inference Time (s)', 'Training Time (s)']]
+        frame  = frame[['Model', 'Precision', 'Recall', 'F1 Score', 'Accuracy', "ROC AUC", 'Inference Time (ms)', 'Training Time (s)']]
         print(frame.head())
         # save the latex table to a file
         output_dir = args.output
@@ -128,6 +140,7 @@ def create_measurement_table(data_dir, dataset_name):
     files = list(Path(data_dir).glob(f'*-{dataset_name}-*.csv'))
     dfs = [pd.read_csv(file) for file in files]
     df = pd.concat(dfs)
+    print(df)
     frame = df.groupby(['name', 'task', 'method'])[['name', 'task', 'method', 'duration']].agg({'duration': 'mean'})
 
     frame.reset_index(inplace=True)
@@ -218,7 +231,7 @@ def classification_to_latex(data, header=None):
 \begin{tabular}{llllll}
 \rowcolor[HTML]{C0C0C0}
 \hline
-\textbf{Model} & \textbf{Precision} & \textbf{Recall} & \textbf{F1-Score} & \textbf{Training Time (s)} & \textbf{Inference Time (s)}\\
+\textbf{Model} & \textbf{Precision} & \textbf{Recall} & \textbf{F1-Score} & \textbf{Accuracy} & \textbf{ROC AUC} & \textbf{Training Time (s)} & \textbf{Inference Time (ms)}\\
 """
 
     # Iterate over each dataset group
@@ -226,7 +239,7 @@ def classification_to_latex(data, header=None):
         # Add dataset header
         latex_table += r"\rowcolor{lightgray}" + "\n"
         latex_table += r"\hline" + "\n"
-        latex_table += rf"\multicolumn{{6}}{{c}}{{{dataset.capitalize().replace('_', ' ').title()}}} \\" + "\n"
+        latex_table += rf"\multicolumn{{8}}{{c}}{{{dataset.capitalize().replace('_', ' ').title()}}} \\" + "\n"
         latex_table += r"\hline" + "\n"
 
         # Add rows for each model in the dataset
@@ -247,24 +260,36 @@ def classification_to_latex(data, header=None):
             f1_score = float(row['F1 Score'])
             precision = float(row['Precision'])
             recall = float(row['Recall'])
+            accuracy = float(row['Accuracy'])
+            roc_auc = float(row['ROC AUC'])
             training_time = float(row['Training Time (s)'])
-            inference_time = float(row['Inference Time (s)'])
+            inference_time = float(row['Inference Time (ms)'])
 
             if f1_score == 1.0:
-                f1_score = r"\textbf{1.0}"
+                f1_score = r"\textbf{1.00}"
             else:
                 f1_score = f"{f1_score:.2f}"
             if precision == 1.0:
-                precision = r"\textbf{1.0}"
+                precision = r"\textbf{1.00}"
             else:
                 precision = f"{precision:.2f}"
             if recall == 1.0:
-                recall = r"\textbf{1.0}"
+                recall = r"\textbf{1.00}"
             else:
                 recall = f"{recall:.2f}"
+            if accuracy == 1.0:
+                accuracy = r"\textbf{1.00}"
+            else:
+                accuracy = f"{accuracy:.2f}"
+            if roc_auc == 1.0:
+                roc_auc = r"\textbf{1.00}"
+            else:
+                roc_auc = f"{roc_auc:.2f}"
 
 
-            latex_table += rf"{model_name} & {precision} & {recall} & {f1_score} & {training_time:.5f} & {inference_time:.5f} \\" + "\n"
+
+
+            latex_table += rf"{model_name} & {precision} & {recall} & {f1_score} & {accuracy} & {roc_auc} & {training_time:.3f} & {inference_time:.2f} \\" + "\n"
             # latex_table += rf"{model_name} & {precision:.2f} & {recall:.2f} & {f1_score:.2f} & {training_time:.5f} & {inference_time:.5f} \\" + "\n"
 
 

@@ -18,7 +18,6 @@ from multiprocessing import cpu_count
 
 from utils.data import load_data
 
-from config import default_config as config
 from torch.utils.data import DataLoader
 from torch.nn import DataParallel
 
@@ -484,7 +483,7 @@ class USBDataset(Dataset):
     """
     Dataset class for the USB dataset
     """
-    def __init__(self, data, labels, window_size=config['sequence_length'], overlap=config['overlap']):
+    def __init__(self, data, labels, window_size, overlap):
         """
         Args:
             data (ndarray): The data
@@ -520,7 +519,7 @@ class USBDataset(Dataset):
 
 
 class USBDataModule(pl.LightningDataModule):
-    def __init__(self, dataset_path=config['data_dir'], batch_size=config['batch_size'], val_split=config['val_split'], num_workers=4):
+    def __init__(self, dataset_path, batch_size, val_split, num_workers=4):
         super(USBDataModule, self).__init__()
         self.dataset_path = Path(dataset_path)
         self.batch_size = batch_size

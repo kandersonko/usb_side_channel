@@ -3,7 +3,7 @@
 name=$1
 sweep_file=$2
 
-project="usb_side_channel"
+project="usb_experiments"
 
 if [ -z "$name" ]; then
     echo "Please provide a name for the sweep"

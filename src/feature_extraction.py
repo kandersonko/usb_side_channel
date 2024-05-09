@@ -77,10 +77,10 @@ def main():
     target_names = dataset['target_names']
 
     device = torch.device("cpu")
-    if not benchmarking:
-        if torch.cuda.is_available():
-            device = torch.device("cuda:0")
-            model = model.to(device)
+    # if not benchmarking:
+    if torch.cuda.is_available():
+        device = torch.device("cuda:0")
+        model = model.to(device)
 
     else:
         model = model.cpu()

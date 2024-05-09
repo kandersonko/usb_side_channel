@@ -1,9 +1,9 @@
 #!/usr/bin/env sh
-#SBATCH --job-name=param-sweep
+#SBATCH --job-name=classifier-job
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --time=02:00:00
-#SBATCH -p gpu-long
+#SBATCH -p gpu-8
 #SBATCH --gres=gpu:a6000:2
 #SBATCH --output=jobs/cls_%A_%a.stdout
 #SBATCH --error=jobs/cls_%A_%a.stderr
